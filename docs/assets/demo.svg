@@ -1,6 +1,5 @@
 <svg width="760" height="290" viewBox="0 0 760 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Animated terminal: undump check restores every target and prints a pass/fail line per backup" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
   <style>
-    text { white-space: pre; }
     .cover { animation: type 16s steps(36, end) infinite; }
     @keyframes type {
       0%, 3%   { transform: translateX(0); }
@@ -33,9 +32,8 @@
 
   <!-- typed command (a bg-colored cover slides right, revealing it) -->
   <g font-size="14">
-    <text x="24" y="74" fill="#7d8590">$ <tspan fill="#e6edf3">undump check --config undump.yaml</tspan></text>
+    <text x="24" y="74" fill="#7d8590">$ <tspan fill="#e6edf3">undump check --config undump.yaml</tspan><tspan class="cursor" fill="#e6edf3">▍</tspan></text>
     <rect class="cover" x="41" y="60" width="330" height="20" fill="#0d1117"/>
-    <text class="cursor" x="342" y="74" fill="#e6edf3">▍</text>
   </g>
 
   <!-- output -->
@@ -43,7 +41,7 @@
     <text class="l1" x="24" y="112" fill="#c9d1d9"><tspan fill="#3fb950" font-weight="700">[PASS ]</tspan> prod-billing rto=14.32s checks=1</text>
     <text class="l2" x="24" y="140" fill="#c9d1d9"><tspan fill="#3fb950" font-weight="700">[PASS ]</tspan> prod-identity rto=11.08s checks=1</text>
     <text class="l3" x="24" y="168" fill="#c9d1d9"><tspan fill="#f85149" font-weight="700">[FAIL ]</tspan> staging-analytics rto=7.44s checks=1</text>
-    <text class="l4" x="24" y="196" fill="#8b949e">  restore: restore rc=1: pg_restore: error: could not read from input file: end of file</text>
+    <text class="l4" x="41" y="196" fill="#8b949e">restore: restore rc=1: pg_restore: error: could not read from input file</text>
     <text class="l5" x="24" y="240" fill="#6e7a87"># that staging dump “ran fine” every night for a month.</text>
   </g>
 </svg>
