@@ -21,6 +21,33 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # internal/dockerengine restores into an ephemeral postgres:18 container
+      # that the code expects to already be present (no auto-pull on create).
+      - name: Pull fixed images
+        run: docker pull postgres:18
+
+      # internal/sources/s3 and cmd/undump tests hit a hardcoded
+      # http://minio:9000 (see hack/seed_s3_fixtures.sh / docker-compose.yml
+      # in the sibling cloud repo). Recreate that here: a MinIO container on
+      # a user-defined network (so the seeding container can resolve it by
+      # name), with its port published to the runner and a hosts alias so
+      # the host-run `go test` binary can resolve "minio" too.
+      - name: Start MinIO
+        run: |
+          docker network create undump_default
+          docker run -d --name minio --network undump_default \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/ready && break
+            sleep 1
+          done
+          echo "127.0.0.1 minio" | sudo tee -a /etc/hosts
+
+      - name: Seed S3 fixtures
+        run: bash hack/seed_s3_fixtures.sh
+
       - run: go test ./...
 
   build:
