@@ -26,8 +26,8 @@
   <!-- wordmark -->
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
     <text x="196" y="92" font-size="52" font-weight="700" fill="#e6edf3">un<tspan fill="#3fb950">dump</tspan></text>
-    <text x="198" y="130" font-size="17" fill="#9da7b3">Continuous backup restore-testing for Postgres.</text>
-    <text x="198" y="156" font-size="14" fill="#6e7a87">A backup you never restored is a rumor, not a backup.</text>
+    <text x="198" y="128" font-size="15" fill="#9da7b3">Continuous backup restore-testing for Postgres.</text>
+    <text x="198" y="153" font-size="13" fill="#6e7a87">A backup you never restored is a rumor, not a backup.</text>
   </g>
 
   <!-- status chips -->
