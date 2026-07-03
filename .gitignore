@@ -1,0 +1,13 @@
+# env / секреты
+.env
+undump.yaml
+!undump.example.yaml
+
+# сборка
+dist/
+build/
+
+# ОС / IDE
+.DS_Store
+.idea/
+.vscode/
