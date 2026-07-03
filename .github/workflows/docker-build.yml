@@ -81,6 +81,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
       - name: Build and push
+        id: build-and-push
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -90,6 +91,10 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Install cosign
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165b93a # v3.7.0
 
       - name: Sign the published Docker image
         if: ${{ github.event_name != 'pull_request' }}
