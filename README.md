@@ -24,7 +24,7 @@ A backup job that "succeeds" can still be worthless: the dump truncates mid-writ
 ## How it works
 
 <p align="center">
-  <img src="docs/assets/architecture.svg" alt="Architecture: inside your infrastructure the agent pulls a dump from S3, restores it into an ephemeral Postgres container, runs checks, and removes the container; only an optional pass/fail report crosses the boundary to UnDump Cloud" width="920">
+  <img src="docs/assets/architecture.svg" alt="Architecture: inside your infrastructure the agent pulls a dump from S3, restores it into an ephemeral Postgres container, runs checks, and removes the container; only an optional pass/fail report crosses the boundary to UnDump Cloud" width="960">
 </p>
 
 Restore happens **in your infrastructure**. The agent never uploads the dump, row contents, or credentials anywhere — only the run result (status, RTO, check names) leaves the machine, and only if you configure a cloud endpoint at all.
