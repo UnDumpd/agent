@@ -29,16 +29,19 @@ Restore happens **in your infrastructure**. The agent never uploads the dump, ro
 
 ## Quick start
 
-No published image yet — build it locally:
-
 ```bash
-docker build -t undump .
 cp undump.example.yaml undump.yaml   # fill in your S3 source and (optionally) cloud endpoint
 docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$(pwd)/undump.yaml:/app/undump.yaml" \
   -e S3_ACCESS_KEY=... -e S3_SECRET_KEY=... \
-  undump check --config /app/undump.yaml
+  ghcr.io/undump/agent check --config /app/undump.yaml
+```
+
+Or build it locally instead of pulling the published image:
+
+```bash
+docker build -t undump .
 ```
 
 The agent needs `docker.sock` mounted — that's how it spins up and tears down the ephemeral Postgres container it restores into.

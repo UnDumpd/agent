@@ -20,6 +20,6 @@ COPY --from=builder /out/undump /usr/local/bin/undump
 #   docker run -v /var/run/docker.sock:/var/run/docker.sock \
 #     -v $(pwd)/undump.yaml:/app/undump.yaml \
 #     -e UNDUMP_API_KEY=... -e S3_ACCESS_KEY=... -e S3_SECRET_KEY=... \
-#     ghcr.io/undump/undump check --config /app/undump.yaml
+#     ghcr.io/undump/agent check --config /app/undump.yaml
 ENTRYPOINT ["/usr/local/bin/undump"]
 CMD ["--help"]
