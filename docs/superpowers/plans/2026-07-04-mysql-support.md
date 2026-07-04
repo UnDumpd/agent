@@ -351,10 +351,13 @@ var mysqlSpec = engineSpec{
 	execEnv: func(password string) []string {
 		return []string{"MYSQL_PWD=" + password}
 	},
-	// mysqladmin ping over the local unix socket is the standard Docker
-	// readiness check for MySQL images, despite the image briefly running a
-	// throwaway bootstrap mysqld during init.
-	readyCmd: []string{"mysqladmin", "ping", "-uroot"},
+	// A plain "mysqladmin ping" isn't enough: the entrypoint briefly runs an
+	// unauthenticated bootstrap mysqld on the same socket before the real
+	// server (with MYSQL_ROOT_PASSWORD applied) takes over, and ping
+	// succeeds against that bootstrap instance too (confirmed while
+	// implementing this plan). Requiring an authenticated query means
+	// readiness only trips once the real password-protected server is up.
+	readyCmd: []string{"mysql", "-uroot", "-e", "SELECT 1"},
 	restoreCmd: func(path string) []string {
 		// mysql has no --file flag for plain SQL; shell redirection is the
 		// standard way to feed a dump to the client.

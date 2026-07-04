@@ -83,7 +83,7 @@ Example payload:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | yes | Identifier used in console output and reports. |
-| `engine` | string | yes | Database engine. Only `postgres` is supported today. |
+| `engine` | string | yes | Reporting label only — the restore path is auto-detected from the dump's content, not from this field. See "The restore environment" below. |
 | `schedule` | string (cron) | no | **Reserved.** Parsed but ignored by `undump check`, which always does a single pass over every target. It will drive the future `undump run` daemon mode; until then, schedule the agent externally (cron, systemd timer, CI). |
 | `source` | object | yes | Where the dump comes from — see below. |
 | `checks` | list | no | Data checks to run against the restored database — see below. |
@@ -114,18 +114,19 @@ Fields are a union across check types; `type` decides which apply.
 | `freshness` | `table`, `column`, `max_age_hours` | Fail if the newest value in a timestamp column is older than `max_age_hours` — catches "the backup restores fine but is three weeks old". |
 | `sql_assert` | `id`, `query`, `expect` | Run an arbitrary SQL query against the restored database and fail unless the result equals `expect`. `id` names the check in reports. |
 
-> **Current status (v0.1.0):** these three check types are parsed and validated, but **not executed yet** — the agent logs that they'll arrive in a future phase. The one check that always runs is `restore` itself: did the dump actually restore into a live Postgres without errors? You don't declare it; it's implicit for every target. Keep the checks in your config — they'll light up when the corresponding agent version ships.
+> **Current status (v0.1.0):** these three check types are parsed and validated, but **not executed yet** — the agent logs that they'll arrive in a future phase. The one check that always runs is `restore` itself: did the dump actually restore into a live database (Postgres or MySQL) without errors? You don't declare it; it's implicit for every target. Keep the checks in your config — they'll light up when the corresponding agent version ships.
 
 ## The restore environment
 
 Not configurable today, but worth knowing what happens on your Docker host for each target:
 
 - The agent talks to Docker via the standard environment (`DOCKER_HOST` etc., or the mounted `/var/run/docker.sock` when running in the published image).
-- It starts a **`postgres:18`** container with a random one-shot password, database `undump_check`, storage on `tmpfs` (nothing touches disk), and port 5432 published on `127.0.0.1` only, on a random host port.
-- The image must already be present on the host — the agent does **not** pull it. Run `docker pull postgres:18` once when provisioning.
+- Which database engine gets spun up is **auto-detected from the dump's content**, not from `targets[].engine` — that field is reporting-only today. Custom-format `pg_dump` (`PGDMP` magic bytes) and plain-SQL dumps (Postgres, or the default fallback for anything unrecognized) start a **`postgres:18`** container; dumps starting with the `-- MySQL dump` header that `mysqldump` emits start a **`mysql:8`** container instead.
+- Each container gets a random one-shot password, database `undump_check`, storage on `tmpfs` (nothing touches disk), and its default port (5432 for Postgres, 3306 for MySQL) published on `127.0.0.1` only, on a random host port.
+- Both images must already be present on the host — the agent does **not** pull them. Run `docker pull postgres:18` and `docker pull mysql:8` once when provisioning.
 - Readiness is waited for up to **60 seconds**, then the run errors.
-- Dump format is detected automatically: custom-format dumps go through `pg_restore --no-owner --no-acl`, plain-SQL dumps through `psql --set ON_ERROR_STOP=1` (without which psql happily exits 0 on broken SQL).
-- `pg_restore`/`psql` run **inside** the container via docker exec — the agent host needs no Postgres client tools.
+- Postgres dump format is detected automatically within the Postgres path too: custom-format dumps go through `pg_restore --no-owner --no-acl`, plain-SQL dumps through `psql --set ON_ERROR_STOP=1` (without which psql happily exits 0 on broken SQL). MySQL support is currently **`mysqldump` plain SQL only** (no `.sql.gz`, no xtrabackup/physical backups) and restores via `mysql -uroot <db> < dump`.
+- Restore clients run **inside** the container via docker exec — the agent host needs no Postgres or MySQL client tools.
 - The container is force-removed when the target finishes, **including on failure and on infrastructure errors**.
 
 ## Exit codes
