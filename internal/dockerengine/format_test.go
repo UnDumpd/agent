@@ -9,23 +9,29 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestDetectFormat_CustomDump(t *testing.T) {
-	isCustom, err := detectFormat("../../testdata/sample_custom.dump")
+func TestDetectEngine_CustomDump(t *testing.T) {
+	engine, err := detectEngine("../../testdata/sample_custom.dump")
 	require.NoError(t, err)
-	assert.True(t, isCustom)
+	assert.Equal(t, EnginePostgresCustom, engine)
 }
 
-func TestDetectFormat_PlainSQL(t *testing.T) {
-	isCustom, err := detectFormat("../../testdata/sample_plain.sql")
+func TestDetectEngine_PlainSQL(t *testing.T) {
+	engine, err := detectEngine("../../testdata/sample_plain.sql")
 	require.NoError(t, err)
-	assert.False(t, isCustom)
+	assert.Equal(t, EnginePostgresPlain, engine)
 }
 
-func TestDetectFormat_EmptyFile(t *testing.T) {
+func TestDetectEngine_MySQLDump(t *testing.T) {
+	engine, err := detectEngine("../../testdata/sample_mysql.sql")
+	require.NoError(t, err)
+	assert.Equal(t, EngineMySQL, engine)
+}
+
+func TestDetectEngine_EmptyFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "empty.dump")
 	require.NoError(t, os.WriteFile(path, []byte{}, 0644))
 
-	isCustom, err := detectFormat(path)
+	engine, err := detectEngine(path)
 	require.NoError(t, err)
-	assert.False(t, isCustom)
+	assert.Equal(t, EnginePostgresPlain, engine)
 }
