@@ -47,6 +47,17 @@ func TestRestore_BrokenPlainSQLFails(t *testing.T) {
 	assert.Contains(t, session.Outcome.Detail, "rc=")
 }
 
+func TestRestore_MySQLFormat(t *testing.T) {
+	ctx := context.Background()
+	session, err := Restore(ctx, "../../testdata/sample_mysql.sql")
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, session.Close()) }()
+
+	assert.True(t, session.Outcome.OK, session.Outcome.Detail)
+	assert.Greater(t, session.Outcome.RTOSeconds, 0.0)
+	assert.Contains(t, session.DSN, "mysql://")
+}
+
 func TestRestore_ContainerRemovedAfterClose(t *testing.T) {
 	ctx := context.Background()
 	session, err := Restore(ctx, "../../testdata/sample_custom.dump")
