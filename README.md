@@ -32,8 +32,6 @@ Restore happens **in your infrastructure**. The agent never uploads the dump, ro
 ## Quick start
 
 ```bash
-docker pull postgres:18                    # restore container images; the agent doesn't pull them itself
-docker pull mysql:8                        # only needed if you test MySQL backups
 cp undump.example.yaml undump.yaml         # fill in your S3 source and (optionally) cloud endpoint
 docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
@@ -48,7 +46,7 @@ Or build it locally instead of pulling the published image:
 docker build -t undump .
 ```
 
-The agent needs `docker.sock` mounted — that's how it spins up and tears down the ephemeral database container it restores into.
+The agent needs `docker.sock` mounted — that's how it spins up and tears down the ephemeral database container it restores into. The restore images (`postgres:18` / `mysql:8`) are pulled automatically on first use; pre-pull them yourself only if you want to avoid the one-time download during the first check run.
 
 ## Config
 

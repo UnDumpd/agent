@@ -14,11 +14,14 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -140,6 +143,13 @@ func Restore(ctx context.Context, dumpPath string) (*Session, error) {
 	cli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("connecting to Docker: %w", err)
+	}
+
+	if err := ensureImage(ctx, cli, spec.image); err != nil {
+		if cerr := cli.Close(); cerr != nil {
+			slog.Warn("failed to close Docker client after image pull error", "error", cerr)
+		}
+		return nil, err
 	}
 
 	started := time.Now()
@@ -295,6 +305,37 @@ func (s *Session) copyToContainer(ctx context.Context, hostPath, containerPath s
 		return err
 	}
 	return s.cli.CopyToContainer(ctx, s.containerID, "/", &buf, container.CopyToContainerOptions{})
+}
+
+// ensureImage pulls the image if it is not already present locally. A pull
+// failure is an infrastructure error (like Docker being unreachable), not a
+// restore failure. The pull happens BEFORE the RTO timer starts — a cold
+// image cache shouldn't inflate the measured restore time.
+func ensureImage(ctx context.Context, cli *dockerclient.Client, ref string) error {
+	_, err := cli.ImageInspect(ctx, ref)
+	if err == nil {
+		return nil
+	}
+	if !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("inspecting image %s: %w", ref, err)
+	}
+
+	slog.Info("image not present locally, pulling", "image", ref)
+	rc, err := cli.ImagePull(ctx, ref, image.PullOptions{})
+	if err != nil {
+		return fmt.Errorf("pulling image %s: %w", ref, err)
+	}
+	defer func() {
+		if cerr := rc.Close(); cerr != nil {
+			slog.Warn("failed to close image pull stream", "image", ref, "error", cerr)
+		}
+	}()
+	// The pull only completes once the progress stream is fully consumed.
+	if _, err := io.Copy(io.Discard, rc); err != nil {
+		return fmt.Errorf("pulling image %s: %w", ref, err)
+	}
+	slog.Info("image pulled", "image", ref)
+	return nil
 }
 
 func randomPassword() string {
