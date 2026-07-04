@@ -127,6 +127,7 @@ func TestLoad_RealExampleFile(t *testing.T) {
 
 	cfg, err := config.Load("../../undump.example.yaml")
 	require.NoError(t, err)
-	assert.Len(t, cfg.Targets, 2)
+	assert.Len(t, cfg.Targets, 3)
 	assert.Equal(t, "prod-billing", cfg.Targets[0].Name)
+	assert.Equal(t, "mysql", cfg.Targets[2].Engine)
 }
