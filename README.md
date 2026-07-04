@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="undump — continuous backup restore-testing for Postgres" width="820">
+  <img src="docs/assets/banner.svg" alt="undump — continuous backup restore-testing for Postgres and MySQL" width="820">
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-BUSL--1.1-blue" alt="License: BUSL-1.1"></a>
 </p>
 
-Continuous **backup restore-testing** agent for Postgres. Backups are everywhere; few teams find out they're broken until the day they actually need one. `undump` closes that gap by periodically pulling a real dump, restoring it into a throwaway container, and checking that the data is actually alive — all inside your own network.
+Continuous **backup restore-testing** agent for Postgres and MySQL. Backups are everywhere; few teams find out they're broken until the day they actually need one. `undump` closes that gap by periodically pulling a real dump, restoring it into a throwaway container, and checking that the data is actually alive — all inside your own network.
 
 Part of UnDump — this agent is the open-source half. The other half, UnDump Cloud, only ever receives `pass`/`fail` results and metrics, never your data.
 
@@ -24,7 +24,7 @@ A backup job that "succeeds" can still be worthless: the dump truncates mid-writ
 ## How it works
 
 <p align="center">
-  <img src="docs/assets/architecture.svg" alt="Architecture: inside your infrastructure the agent pulls a dump from S3, restores it into an ephemeral Postgres container, runs checks, and removes the container; only an optional pass/fail report crosses the boundary to UnDump Cloud" width="960">
+  <img src="docs/assets/architecture.svg" alt="Architecture: inside your infrastructure the agent pulls a dump from S3, restores it into an ephemeral database container, runs checks, and removes the container; only an optional pass/fail report crosses the boundary to UnDump Cloud" width="960">
 </p>
 
 Restore happens **in your infrastructure**. The agent never uploads the dump, row contents, or credentials anywhere — only the run result (status, RTO, check names) leaves the machine, and only if you configure a cloud endpoint at all.
@@ -32,7 +32,8 @@ Restore happens **in your infrastructure**. The agent never uploads the dump, ro
 ## Quick start
 
 ```bash
-docker pull postgres:18                    # the restore container image; the agent doesn't pull it itself
+docker pull postgres:18                    # restore container images; the agent doesn't pull them itself
+docker pull mysql:8                        # only needed if you test MySQL backups
 cp undump.example.yaml undump.yaml         # fill in your S3 source and (optionally) cloud endpoint
 docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
@@ -47,7 +48,7 @@ Or build it locally instead of pulling the published image:
 docker build -t undump .
 ```
 
-The agent needs `docker.sock` mounted — that's how it spins up and tears down the ephemeral Postgres container it restores into.
+The agent needs `docker.sock` mounted — that's how it spins up and tears down the ephemeral database container it restores into.
 
 ## Config
 
@@ -75,7 +76,7 @@ targets:
 
 ## Status
 
-Working today: `undump check --config ...` — a single pass over every target. It fetches the dump from S3, restores it into an ephemeral `postgres:18` container (custom-format and plain-SQL dumps both detected automatically), runs the `restore` check, guarantees container cleanup even on failure, and (if `cloud.endpoint` is set) reports the result over HTTP.
+Working today: `undump check --config ...` — a single pass over every target. It fetches the dump from S3, auto-detects the engine from the dump's content, restores it into an ephemeral `postgres:18` or `mysql:8` container (Postgres custom-format, Postgres plain-SQL, and `mysqldump` plain-SQL are all recognized), runs the `restore` check, guarantees container cleanup even on failure, and (if `cloud.endpoint` is set) reports the result over HTTP.
 
 Not yet implemented:
 - `rowcount` / `freshness` / `sql_assert` checks — parsed from config but not executed yet; only `restore` runs today.
