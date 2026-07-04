@@ -1,4 +1,4 @@
-<svg width="820" height="190" viewBox="0 0 820 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="undump — continuous backup restore-testing for Postgres">
+<svg width="820" height="190" viewBox="0 0 820 190" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="undump — continuous backup restore-testing for Postgres and MySQL">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0d1117"/>
@@ -26,7 +26,7 @@
   <!-- wordmark -->
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
     <text x="196" y="92" font-size="52" font-weight="700" fill="#e6edf3">un<tspan fill="#3fb950">dump</tspan></text>
-    <text x="198" y="128" font-size="15" fill="#9da7b3">Continuous backup restore-testing for Postgres.</text>
+    <text x="198" y="128" font-size="15" fill="#9da7b3">Continuous backup restore-testing for Postgres and MySQL.</text>
     <text x="198" y="153" font-size="13" fill="#6e7a87">A backup you never restored is a rumor, not a backup.</text>
   </g>
 
