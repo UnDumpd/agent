@@ -18,8 +18,9 @@ var ErrNotImplemented = errors.New("check is not implemented")
 
 // Context is the stable input shared by all configured checks.
 type Context struct {
-	DSN    string
-	Engine string
+	DSN         string
+	Engine      string
+	QueryScalar func(context.Context, string) (string, error)
 }
 
 // Runner executes one configured check against the restored database.

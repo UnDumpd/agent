@@ -17,6 +17,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -47,6 +48,7 @@ type engineSpec struct {
 	execEnv      func(password string) []string // env for docker-exec'd commands (ready check + restore)
 	readyCmd     []string
 	restoreCmd   func(containerDumpPath string) []string
+	queryCmd     func(query string) []string
 	dsn          func(password, host, port string) string
 }
 
@@ -76,6 +78,9 @@ func postgresSpec(custom bool) engineSpec {
 		execEnv:    func(password string) []string { return nil },
 		readyCmd:   []string{"pg_isready", "-U", pgUser, "-d", dbName},
 		restoreCmd: restoreCmd,
+		queryCmd: func(query string) []string {
+			return []string{"psql", "-U", pgUser, "-d", dbName, "--set", "ON_ERROR_STOP=1", "-t", "-A", "-c", query}
+		},
 		dsn: func(password, host, port string) string {
 			return fmt.Sprintf("postgresql://%s:%s@%s:%s/%s", pgUser, password, host, port, dbName)
 		},
@@ -104,6 +109,9 @@ var mysqlSpec = engineSpec{
 		// standard way to feed a dump to the client.
 		return []string{"sh", "-c", fmt.Sprintf("mysql -uroot %s < %s", dbName, path)}
 	},
+	queryCmd: func(query string) []string {
+		return []string{"mysql", "-uroot", "-N", "-B", dbName, "-e", query}
+	},
 	dsn: func(password, host, port string) string {
 		return fmt.Sprintf("mysql://root:%s@%s:%s/%s", password, host, port, dbName)
 	},
@@ -124,6 +132,7 @@ type Session struct {
 
 	cli         *dockerclient.Client
 	containerID string
+	password    string
 	spec        engineSpec
 }
 
@@ -179,7 +188,7 @@ func Restore(ctx context.Context, dumpPath string) (*Session, error) {
 		return nil, fmt.Errorf("creating container: %w", err)
 	}
 
-	session := &Session{cli: cli, containerID: resp.ID, spec: spec}
+	session := &Session{cli: cli, containerID: resp.ID, password: password, spec: spec}
 
 	if err := cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		if cerr := session.Close(); cerr != nil {
@@ -210,6 +219,22 @@ func Restore(ctx context.Context, dumpPath string) (*Session, error) {
 		Detail:     detail,
 	}
 	return session, nil
+}
+
+// QueryScalar runs a query inside the restored database container and returns
+// the trimmed text output. It intentionally uses the client binaries inside
+// the DB container, matching restore behavior and avoiding network reachability
+// assumptions from the agent process.
+func (s *Session) QueryScalar(ctx context.Context, query string) (string, error) {
+	code, output, err := s.exec(ctx, s.spec.queryCmd(query), s.spec.execEnv(s.password))
+	if err != nil {
+		return "", fmt.Errorf("querying restored database: %w", err)
+	}
+	output = strings.TrimSpace(output)
+	if code != 0 {
+		return "", fmt.Errorf("query rc=%d: %s", code, truncate(output, 500))
+	}
+	return output, nil
 }
 
 // Close GUARANTEES the container is removed, even if it's in a broken state.

@@ -114,7 +114,7 @@ Fields are a union across check types; `type` decides which apply.
 | `freshness` | `table`, `column`, `max_age_hours` | Fail if the newest value in a timestamp column is older than `max_age_hours` — catches "the backup restores fine but is three weeks old". |
 | `sql_assert` | `id`, `query`, `expect` | Run an arbitrary SQL query against the restored database and fail unless the result equals `expect`. `id` names the check in reports. |
 
-> **Current status (v0.1.0):** these three check types are parsed and routed through the `internal/checks` registry, but **not executed yet** because their runners are not implemented. The one check that always runs is `restore` itself: did the dump actually restore into a live database (Postgres or MySQL) without errors? You don't declare it; it's implicit for every target. Keep the checks in your config — they'll light up when the corresponding agent version ships.
+> **Current status (v0.1.0):** `sql_assert` runs today for Postgres and MySQL. It executes inside the restored database container via Docker exec, so the agent host still needs no database client tools. `rowcount` and `freshness` are parsed and routed through the `internal/checks` registry, but their runners are not implemented yet. The one check that always runs is `restore` itself: did the dump actually restore into a live database (Postgres or MySQL) without errors? You don't declare `restore`; it's implicit for every target.
 
 ## The restore environment
 
@@ -126,7 +126,7 @@ Not configurable today, but worth knowing what happens on your Docker host for e
 - If the needed image is missing on the host, the agent **pulls it automatically** before starting the container (a pull failure is an infrastructure error → run status `error`). The pull happens before the RTO timer starts, so a cold image cache doesn't inflate the measured restore time. Pre-pull `postgres:18` / `mysql:8` when provisioning only if you want to avoid the one-time download during the first run.
 - Readiness is waited for up to **60 seconds**, then the run errors.
 - Postgres dump format is detected automatically within the Postgres path too: custom-format dumps go through `pg_restore --no-owner --no-acl`, plain-SQL dumps through `psql --set ON_ERROR_STOP=1` (without which psql happily exits 0 on broken SQL). MySQL support is currently **`mysqldump` plain SQL only** (no `.sql.gz`, no xtrabackup/physical backups) and restores via `mysql -uroot <db> < dump`.
-- Restore clients run **inside** the container via docker exec — the agent host needs no Postgres or MySQL client tools.
+- Restore and `sql_assert` clients run **inside** the container via docker exec — the agent host needs no Postgres or MySQL client tools.
 - The container is force-removed when the target finishes, **including on failure and on infrastructure errors**.
 
 ## Exit codes
