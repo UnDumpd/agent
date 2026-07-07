@@ -28,8 +28,8 @@ type S3Source struct {
 
 // CheckConfig — config for a single check. Fields are the union across all
 // check types (rowcount/freshness/sql_assert); Type determines which apply.
-// In this version of the agent (Phase 0-1), checks other than "restore" are
-// only parsed and validated, not executed yet — see cmd/undump.
+// sql_assert runs today; rowcount/freshness are parsed for forward-compatible
+// configs and routed through internal/checks once their runners exist.
 type CheckConfig struct {
 	Type        string  `yaml:"type"`
 	Table       string  `yaml:"table"`

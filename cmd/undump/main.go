@@ -124,20 +124,22 @@ func runTarget(ctx context.Context, target config.Target) models.RunReport {
 		Detail: session.Outcome.Detail,
 	})
 
-	checkCtx := checks.Context{DSN: session.DSN, Engine: target.Engine}
-	for _, c := range target.Checks {
-		if c.Type == "restore" {
-			continue
-		}
-		result, err := checks.Run(ctx, checkCtx, c)
-		if err != nil {
-			if errors.Is(err, checks.ErrNotImplemented) {
-				slog.Info("check will be implemented in a future phase", "type", c.Type, "target", target.Name)
+	if session.Outcome.OK {
+		checkCtx := checks.Context{DSN: session.DSN, Engine: target.Engine, QueryScalar: session.QueryScalar}
+		for _, c := range target.Checks {
+			if c.Type == "restore" {
 				continue
 			}
-			return finalizeError(report, started, fmt.Errorf("running check %s: %w", c.Type, err))
+			result, err := checks.Run(ctx, checkCtx, c)
+			if err != nil {
+				if errors.Is(err, checks.ErrNotImplemented) {
+					slog.Info("check will be implemented in a future phase", "type", c.Type, "target", target.Name)
+					continue
+				}
+				return finalizeError(report, started, fmt.Errorf("running check %s: %w", c.Type, err))
+			}
+			report.Checks = append(report.Checks, result)
 		}
-		report.Checks = append(report.Checks, result)
 	}
 
 	report.Status = statusFromChecks(report.Checks)
