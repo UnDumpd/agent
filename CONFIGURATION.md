@@ -83,7 +83,7 @@ Example payload:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | yes | Identifier used in console output and reports. |
-| `engine` | string | yes | Reporting label only — the restore path is auto-detected from the dump's content, not from this field. See "The restore environment" below. |
+| `engine` | string | yes | Reporting label (`postgres` or `mysql`) sent to UnDump Cloud. The restore path is still auto-detected from the dump's content, not from this field. See "The restore environment" below. |
 | `schedule` | string (cron) | no | **Reserved.** Parsed but ignored by `undump check`, which always does a single pass over every target. It will drive the future `undump run` daemon mode; until then, schedule the agent externally (cron, systemd timer, CI). |
 | `source` | object | yes | Where the dump comes from — see below. |
 | `checks` | list | no | Data checks to run against the restored database — see below. |
@@ -114,7 +114,7 @@ Fields are a union across check types; `type` decides which apply.
 | `freshness` | `table`, `column`, `max_age_hours` | Fail if the newest value in a timestamp column is older than `max_age_hours` — catches "the backup restores fine but is three weeks old". |
 | `sql_assert` | `id`, `query`, `expect` | Run an arbitrary SQL query against the restored database and fail unless the result equals `expect`. `id` names the check in reports. |
 
-> **Current status (v0.1.0):** these three check types are parsed and validated, but **not executed yet** — the agent logs that they'll arrive in a future phase. The one check that always runs is `restore` itself: did the dump actually restore into a live database (Postgres or MySQL) without errors? You don't declare it; it's implicit for every target. Keep the checks in your config — they'll light up when the corresponding agent version ships.
+> **Current status (v0.1.0):** these three check types are parsed and routed through the `internal/checks` registry, but **not executed yet** because their runners are not implemented. The one check that always runs is `restore` itself: did the dump actually restore into a live database (Postgres or MySQL) without errors? You don't declare it; it's implicit for every target. Keep the checks in your config — they'll light up when the corresponding agent version ships.
 
 ## The restore environment
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"undump/internal/checks"
 	"undump/internal/config"
 	"undump/internal/dockerengine"
 	"undump/internal/models"
@@ -122,20 +124,23 @@ func runTarget(ctx context.Context, target config.Target) models.RunReport {
 		Detail: session.Outcome.Detail,
 	})
 
+	checkCtx := checks.Context{DSN: session.DSN, Engine: target.Engine}
 	for _, c := range target.Checks {
-		if c.Type != "restore" {
-			slog.Info("check will be implemented in a future phase", "type", c.Type, "target", target.Name)
+		if c.Type == "restore" {
+			continue
 		}
+		result, err := checks.Run(ctx, checkCtx, c)
+		if err != nil {
+			if errors.Is(err, checks.ErrNotImplemented) {
+				slog.Info("check will be implemented in a future phase", "type", c.Type, "target", target.Name)
+				continue
+			}
+			return finalizeError(report, started, fmt.Errorf("running check %s: %w", c.Type, err))
+		}
+		report.Checks = append(report.Checks, result)
 	}
 
-	// TODO(future phase): once rowcount/freshness/sql_assert actually run
-	// (see the loop above), the status should be aggregated across all of
-	// report.Checks, not just session.Outcome.OK — otherwise a failing check
-	// other than restore won't be reflected in the overall status.
-	report.Status = models.StatusPass
-	if !session.Outcome.OK {
-		report.Status = models.StatusFail
-	}
+	report.Status = statusFromChecks(report.Checks)
 	report.StartedAt = started
 	report.FinishedAt = time.Now().UTC()
 	return report
@@ -155,4 +160,13 @@ func rtoString(rto *float64) string {
 		return "-"
 	}
 	return fmt.Sprintf("%.2fs", *rto)
+}
+
+func statusFromChecks(results []models.CheckResult) models.Status {
+	for _, result := range results {
+		if result.Status != models.CheckStatusPass {
+			return models.StatusFail
+		}
+	}
+	return models.StatusPass
 }
