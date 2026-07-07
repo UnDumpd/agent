@@ -77,7 +77,7 @@ targets:
 Working today: `undump check --config ...` — a single pass over every target. It fetches the dump from S3, auto-detects the engine from the dump's content, restores it into an ephemeral `postgres:18` or `mysql:8` container (Postgres custom-format, Postgres plain-SQL, and `mysqldump` plain-SQL are all recognized), runs the `restore` check, guarantees container cleanup even on failure, and (if `cloud.endpoint` is set) reports the result over HTTP.
 
 Not yet implemented:
-- `rowcount` / `freshness` / `sql_assert` checks — parsed from config but not executed yet; only `restore` runs today.
+- `rowcount` / `freshness` / `sql_assert` checks — parsed from config and routed through the `internal/checks` registry, but no runners are implemented yet; only `restore` runs today.
 - `undump run` — a daemon mode with per-target cron scheduling. For now, run `check` yourself (e.g. from your own cron/systemd timer).
 
 ## Development

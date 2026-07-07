@@ -100,3 +100,12 @@ targets:
 	assert.Equal(t, string(models.StatusPass), string(received[0].Status))
 	assert.Equal(t, string(models.StatusError), string(received[1].Status))
 }
+
+func TestStatusFromChecksFailsWhenAnyCheckFails(t *testing.T) {
+	status := statusFromChecks([]models.CheckResult{
+		{Name: "restore", Status: models.CheckStatusPass},
+		{Name: "rowcount", Status: models.CheckStatusFail},
+	})
+
+	assert.Equal(t, models.StatusFail, status)
+}
