@@ -21,6 +21,10 @@ type Context struct {
 	DSN         string
 	Engine      string
 	QueryScalar func(context.Context, string) (string, error)
+	// LastRowcount is the last known good rowcount for this target, delivered
+	// by the cloud (IngestResponse.last_rowcount). Nil on the first run or when
+	// the cloud is not configured — rowcount then records a baseline and passes.
+	LastRowcount *int64
 }
 
 // Runner executes one configured check against the restored database.
