@@ -16,10 +16,11 @@ FROM gcr.io/distroless/static-debian12
 # (permission denied on docker.sock), i.e. the agent's whole functionality.
 COPY --from=builder /out/undump /usr/local/bin/undump
 
-# Example run:
+# Example run (daemon — checks each target on its own configured schedule):
 #   docker run -v /var/run/docker.sock:/var/run/docker.sock \
 #     -v $(pwd)/undump.yaml:/app/undump.yaml \
 #     -e UNDUMP_API_KEY=... -e S3_ACCESS_KEY=... -e S3_SECRET_KEY=... \
-#     ghcr.io/undump/agent check --config /app/undump.yaml
+#     ghcr.io/undump/agent run --config /app/undump.yaml
+# For a single one-off pass instead, use `check` in place of `run`.
 ENTRYPOINT ["/usr/local/bin/undump"]
 CMD ["--help"]

@@ -28,7 +28,7 @@ func TestRunTarget_SuccessfulRestoreEndToEnd(t *testing.T) {
 		},
 	}
 
-	report := runTarget(context.Background(), target)
+	report := runTarget(context.Background(), target, nil)
 
 	assert.Equal(t, models.StatusPass, report.Status)
 	require.Len(t, report.Checks, 1)
@@ -39,6 +39,32 @@ func TestRunTarget_SuccessfulRestoreEndToEnd(t *testing.T) {
 	require.NotNil(t, report.DumpSizeBytes)
 	assert.Equal(t, int64(2801), *report.DumpSizeBytes)
 	assert.Nil(t, report.Error)
+}
+
+func TestRunTarget_ForwardsLastRowcountIntoRowcountCheck(t *testing.T) {
+	target := config.Target{
+		Name:   "test-target",
+		Engine: "postgres",
+		Source: config.S3Source{
+			URI:         "s3://undump-test/dumps/exact.sql",
+			EndpointURL: "http://minio:9000",
+			AccessKey:   "minioadmin",
+			SecretKey:   "minioadmin",
+		},
+		Checks: []config.CheckConfig{{Type: "rowcount", Table: "widgets", MaxDropPct: 10}},
+	}
+
+	// sample_plain.sql seeds 3 widgets; against a previous value of 4 that's
+	// a 25% drop — over the 10% threshold — so this proves lastRowcount
+	// actually reached the check, not just that rowcount ran.
+	previous := int64(4)
+	report := runTarget(context.Background(), target, &previous)
+
+	require.Len(t, report.Checks, 2)
+	rowcount := report.Checks[1]
+	assert.Equal(t, "rowcount", rowcount.Name)
+	assert.Equal(t, models.CheckStatusFail, rowcount.Status)
+	assert.Equal(t, models.StatusFail, report.Status)
 }
 
 func TestRunTarget_UnknownS3KeyGivesErrorStatus(t *testing.T) {
@@ -52,7 +78,7 @@ func TestRunTarget_UnknownS3KeyGivesErrorStatus(t *testing.T) {
 		},
 	}
 
-	report := runTarget(context.Background(), target)
+	report := runTarget(context.Background(), target, nil)
 
 	assert.Equal(t, models.StatusError, report.Status)
 	require.NotNil(t, report.Error)

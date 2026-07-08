@@ -28,6 +28,7 @@ func main() {
 		Version: version,
 	}
 	root.AddCommand(newCheckCmd())
+	root.AddCommand(newRunCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -56,26 +57,35 @@ func runCheck(ctx context.Context, configPath string) error {
 	}
 
 	for _, target := range cfg.Targets {
-		report := runTarget(ctx, target)
-		fmt.Printf("[%-5s] %s rto=%v checks=%d\n",
-			strings.ToUpper(string(report.Status)), report.TargetName, rtoString(report.RTOSeconds), len(report.Checks))
-		if report.Error != nil {
-			fmt.Printf("  error: %s\n", *report.Error)
-		}
-		for _, c := range report.Checks {
-			if c.Status != models.CheckStatusPass {
-				fmt.Printf("  %s: %s\n", c.Name, c.Detail)
-			}
-		}
+		// A one-shot check has no notion of "the previous run" to carry
+		// last_rowcount from — every rowcount check records a fresh baseline.
+		// The run daemon (rowcountState) is what makes the delta continuous.
+		report := runTarget(ctx, target, nil)
+		logReport(report)
 		reportclient.Send(ctx, cfg.Cloud.Endpoint, cfg.Cloud.APIKey, report)
 	}
 	return nil
 }
 
+func logReport(report models.RunReport) {
+	fmt.Printf("[%-5s] %s rto=%v checks=%d\n",
+		strings.ToUpper(string(report.Status)), report.TargetName, rtoString(report.RTOSeconds), len(report.Checks))
+	if report.Error != nil {
+		fmt.Printf("  error: %s\n", *report.Error)
+	}
+	for _, c := range report.Checks {
+		if c.Status != models.CheckStatusPass {
+			fmt.Printf("  %s: %s\n", c.Name, c.Detail)
+		}
+	}
+}
+
 // runTarget — the full cycle for a single target: fetch the dump, restore, check.
 // An error for ONE target never panics or breaks the loop in runCheck —
 // it's reflected in report.Status="error" with the text in report.Error.
-func runTarget(ctx context.Context, target config.Target) models.RunReport {
+// lastRowcount feeds the rowcount check's delta base; nil means "no previous
+// value" (first run, or a caller — like runCheck — that doesn't track one).
+func runTarget(ctx context.Context, target config.Target, lastRowcount *int64) models.RunReport {
 	started := time.Now().UTC()
 	report := models.RunReport{
 		TargetName:   target.Name,
@@ -127,7 +137,12 @@ func runTarget(ctx context.Context, target config.Target) models.RunReport {
 	if session.Outcome.OK {
 		// target.Engine is a reporting label; SQL dialect choices must follow
 		// the engine actually detected from the dump.
-		checkCtx := checks.Context{DSN: session.DSN, Engine: session.EngineName(), QueryScalar: session.QueryScalar}
+		checkCtx := checks.Context{
+			DSN:          session.DSN,
+			Engine:       session.EngineName(),
+			QueryScalar:  session.QueryScalar,
+			LastRowcount: lastRowcount,
+		}
 		for _, c := range target.Checks {
 			if c.Type == "restore" {
 				continue

@@ -78,7 +78,7 @@ Example payload:
 
 `status` is `pass` (restored, all checks passed), `fail` (restored, but a check failed), or `error` (couldn't even get that far — S3 unreachable, Docker unavailable, etc.; the `error` field carries the message).
 
-The cloud replies with `{"run_id": <int>, "last_rowcount": <int|null>}`, where `last_rowcount` is the value of the target's most recent *passing* `rowcount` check — the delta base for the next run. `undump check` currently ignores the response body; the future daemon mode will carry it between scheduled runs.
+The cloud replies with `{"run_id": <int>, "last_rowcount": <int|null>}`, where `last_rowcount` is the value of the target's most recent *passing* `rowcount` check — the delta base for the next run. `undump check`'s one-shot invocations ignore the response body (there is no "next run" to carry it to); `undump run` reads it and feeds it into that target's next scheduled `rowcount` check.
 
 ## `targets[]` — the backups under test
 
@@ -86,7 +86,7 @@ The cloud replies with `{"run_id": <int>, "last_rowcount": <int|null>}`, where `
 |---|---|---|---|
 | `name` | string | yes | Identifier used in console output and reports. |
 | `engine` | string | yes | Reporting label (`postgres` or `mysql`) sent to UnDump Cloud. The restore path is still auto-detected from the dump's content, not from this field. See "The restore environment" below. |
-| `schedule` | string (cron) | no | **Reserved.** Parsed but ignored by `undump check`, which always does a single pass over every target. It will drive the future `undump run` daemon mode; until then, schedule the agent externally (cron, systemd timer, CI). |
+| `schedule` | string (cron) | required for `run`, ignored by `check` | Standard 5-field cron (`"0 * * * *"`) or a `robfig/cron` descriptor (`"@every 1h"`, `"@hourly"`, …). `undump check` always does a single pass over every target and never looks at this field; `undump run` requires it on every target and fails to start otherwise. |
 | `source` | object | yes | Where the dump comes from — see below. |
 | `checks` | list | no | Data checks to run against the restored database — see below. |
 
@@ -118,7 +118,15 @@ Fields are a union across check types; `type` decides which apply.
 
 > **Current status (v0.1.0):** all three check types run today for Postgres and MySQL, executing inside the restored database container via Docker exec — the agent host needs no database client tools. The one check that always runs is `restore` itself: did the dump actually restore into a live database without errors? You don't declare `restore`; it's implicit for every target.
 >
-> **`rowcount` and one-shot `check`:** the previous value comes from the cloud's ingest response (`last_rowcount` — the most recent *passing* rowcount for the target). `undump check` performs a single run and has nowhere to carry that value yet, so today every `rowcount` records a baseline and passes; the continuous delta arrives with the `undump run` daemon.
+> **`rowcount`'s previous value** comes from the cloud's ingest response (`last_rowcount` — the most recent *passing* rowcount for the target), carried in memory from one scheduled run to the next. `undump check` performs one run per invocation with nowhere to carry that value to, so under `check` every `rowcount` records a baseline and passes; the continuous delta only accumulates under `undump run` (see below), and only resets when the daemon restarts.
+
+## `undump run` — the daemon
+
+`undump run --config undump.yaml` loads the config once, then schedules each target on its own `schedule` using standard cron (5 fields; `robfig/cron` descriptors like `@every 1h` / `@hourly` also work) — no built-in config reload, restart the process to pick up changes. It never returns on its own:
+
+- **Shutdown** is `SIGINT`/`SIGTERM`. A restore already in flight is never interrupted by the signal — the daemon waits for it to finish (and clean up its container, same guarantee as `check`) before exiting. Only *scheduling new* runs stops immediately.
+- **Overlap:** if a target's restore takes longer than its own schedule interval, the next due tick for that target is **skipped**, not queued — a slow target degrades to running late rather than piling up concurrent restores against the same Docker host. Other targets are unaffected; scheduling is per-target.
+- Every target must have a non-empty `schedule` — `run` fails at startup (before scheduling anything) if any target is missing one, or if a `schedule` doesn't parse as cron.
 
 ## The restore environment
 
@@ -136,6 +144,8 @@ Not configurable today, but worth knowing what happens on your Docker host for e
 ## Exit codes
 
 `undump check` exits non-zero only for startup problems: unreadable config, invalid YAML, an unset `env:` variable, or a misplaced `pattern`. A target that **fails or errors does not change the exit code** — per-target results go to stdout and (optionally) to the cloud. If you wire the agent into alerting via exit codes today, parse the output; exit-code semantics for failing targets may tighten in a future release.
+
+`undump run` applies the same startup checks, plus: every target must have a non-empty, parseable `schedule`, and the config must declare at least one target. It exits `0` on a clean `SIGINT`/`SIGTERM` shutdown. Same as `check`, an individual target failing or erroring never stops the daemon or changes anything about its exit code — it's reflected in that run's report only.
 
 ## Environment variables recap
 
