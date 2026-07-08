@@ -37,8 +37,10 @@ docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$(pwd)/undump.yaml:/app/undump.yaml" \
   -e S3_ACCESS_KEY=... -e S3_SECRET_KEY=... \
-  ghcr.io/undumpd/agent check --config /app/undump.yaml
+  ghcr.io/undumpd/agent run --config /app/undump.yaml
 ```
+
+That starts the long-running daemon: each target is checked on its own `schedule` (standard 5-field cron) until the container is stopped. For a single one-off pass instead — e.g. wired into your own cron/systemd timer — use `check` in place of `run`.
 
 Or build it locally instead of pulling the published image:
 
@@ -74,15 +76,17 @@ targets:
 
 ## Status
 
-Working today: `undump check --config ...` — a single pass over every target. It fetches the dump from S3, auto-detects the engine from the dump's content, restores it into an ephemeral `postgres:18` or `mysql:8` container (Postgres custom-format, Postgres plain-SQL, and `mysqldump` plain-SQL are all recognized), runs the implicit `restore` check plus the configured `rowcount` / `freshness` / `sql_assert` checks, guarantees container cleanup even on failure, and (if `cloud.endpoint` is set) reports the result over HTTP.
+Both commands fetch the dump from S3, auto-detect the engine from the dump's content, restore it into an ephemeral `postgres:18` or `mysql:8` container (Postgres custom-format, Postgres plain-SQL, and `mysqldump` plain-SQL are all recognized), run the implicit `restore` check plus the configured `rowcount` / `freshness` / `sql_assert` checks, guarantee container cleanup even on failure, and (if `cloud.endpoint` is set) report the result over HTTP:
+
+- `undump check --config ...` — a single pass over every target, then exit. Useful for a one-off run or when you'd rather drive scheduling yourself (cron, systemd timer, CI).
+- `undump run --config ...` — a daemon: every target's `schedule` (standard 5-field cron, e.g. `"0 * * * *"`, or `"@every 1h"`) is loaded once at startup and run on its own timer until SIGINT/SIGTERM. A schedule is required on every target for `run` (it's optional and ignored by `check`). Shutdown waits for any restore already in flight to finish and clean up its container before the process exits. If a target's restore outlasts its own schedule, the next tick for that target is skipped rather than piling up concurrent restores.
 
 Check semantics:
-- `rowcount` — counts rows in `table`; fails when the count drops more than `max_drop_pct` (default 10%) against the last known good value. Without a previous value (first run, or no cloud) it records a baseline and passes.
+- `rowcount` — counts rows in `table`; fails when the count drops more than `max_drop_pct` (default 10%) against the last known good value. Without a previous value (first run of a target since the daemon started, or no cloud configured) it records a baseline and passes.
 - `freshness` — fails when `MAX(column)` in `table` is older than `max_age_hours`. The age is computed by the restored database itself, so no timestamp-format guessing.
 - `sql_assert` — runs `query` and compares the scalar result with `expect`.
 
-Not yet implemented:
-- `undump run` — a daemon mode with per-target cron scheduling. For now, run `check` yourself (e.g. from your own cron/systemd timer). This is also when the rowcount delta starts working continuously: the daemon will carry the cloud's `last_rowcount` from one scheduled run to the next.
+`rowcount`'s delta base (`last_rowcount`) comes from the cloud's response to the previous report and is carried in memory between scheduled runs of the same target — this only accumulates under `run`. A restart of the daemon, or `check`'s one-shot invocations, always start from a fresh baseline.
 
 ## Development
 
