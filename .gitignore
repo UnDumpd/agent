@@ -11,3 +11,6 @@ build/
 .DS_Store
 .idea/
 .vscode/
+
+# worktrees для параллельной разработки
+.worktrees/
