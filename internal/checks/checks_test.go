@@ -84,6 +84,56 @@ func TestSQLAssertFailsWhenValueDiffers(t *testing.T) {
 	assert.Equal(t, "4", *result.Expected)
 }
 
+func TestRowcountAndFreshnessAgainstRestoredPostgres(t *testing.T) {
+	ctx := context.Background()
+	session, err := dockerengine.Restore(ctx, "../../testdata/sample_plain.sql")
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, session.Close()) }()
+
+	checkCtx := Context{DSN: session.DSN, Engine: "postgres", QueryScalar: session.QueryScalar}
+
+	// rowcount: no previous value → baseline pass
+	result, err := Run(ctx, checkCtx, config.CheckConfig{Type: "rowcount", Table: "widgets"})
+	require.NoError(t, err)
+	assert.Equal(t, models.CheckStatusPass, result.Status)
+	assert.Equal(t, "3", *result.Value)
+
+	// rowcount: 3 rows vs previous 4 is a -25% drop → fail at the default 10%
+	prev := int64(4)
+	checkCtx.LastRowcount = &prev
+	result, err = Run(ctx, checkCtx, config.CheckConfig{Type: "rowcount", Table: "widgets"})
+	require.NoError(t, err)
+	assert.Equal(t, models.CheckStatusFail, result.Status)
+
+	// freshness: fixture rows are from 2026-07-01 — young enough for 10 years,
+	// too old for ~0.4 seconds
+	result, err = Run(ctx, checkCtx, config.CheckConfig{Type: "freshness", Table: "widgets", Column: "created_at", MaxAgeHours: 87600})
+	require.NoError(t, err)
+	assert.Equal(t, models.CheckStatusPass, result.Status)
+
+	result, err = Run(ctx, checkCtx, config.CheckConfig{Type: "freshness", Table: "widgets", Column: "created_at", MaxAgeHours: 0.0001})
+	require.NoError(t, err)
+	assert.Equal(t, models.CheckStatusFail, result.Status)
+}
+
+func TestRowcountAndFreshnessAgainstRestoredMySQL(t *testing.T) {
+	ctx := context.Background()
+	session, err := dockerengine.Restore(ctx, "../../testdata/sample_mysql.sql")
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, session.Close()) }()
+
+	checkCtx := Context{DSN: session.DSN, Engine: "mysql", QueryScalar: session.QueryScalar}
+
+	result, err := Run(ctx, checkCtx, config.CheckConfig{Type: "rowcount", Table: "widgets"})
+	require.NoError(t, err)
+	assert.Equal(t, models.CheckStatusPass, result.Status)
+	assert.Equal(t, "3", *result.Value)
+
+	result, err = Run(ctx, checkCtx, config.CheckConfig{Type: "freshness", Table: "widgets", Column: "created_at", MaxAgeHours: 87600})
+	require.NoError(t, err)
+	assert.Equal(t, models.CheckStatusPass, result.Status)
+}
+
 func TestSQLAssertPassesAgainstRestoredMySQL(t *testing.T) {
 	ctx := context.Background()
 	session, err := dockerengine.Restore(ctx, "../../testdata/sample_mysql.sql")

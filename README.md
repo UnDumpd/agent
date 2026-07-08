@@ -74,11 +74,15 @@ targets:
 
 ## Status
 
-Working today: `undump check --config ...` — a single pass over every target. It fetches the dump from S3, auto-detects the engine from the dump's content, restores it into an ephemeral `postgres:18` or `mysql:8` container (Postgres custom-format, Postgres plain-SQL, and `mysqldump` plain-SQL are all recognized), runs the implicit `restore` check plus configured `sql_assert` checks, guarantees container cleanup even on failure, and (if `cloud.endpoint` is set) reports the result over HTTP.
+Working today: `undump check --config ...` — a single pass over every target. It fetches the dump from S3, auto-detects the engine from the dump's content, restores it into an ephemeral `postgres:18` or `mysql:8` container (Postgres custom-format, Postgres plain-SQL, and `mysqldump` plain-SQL are all recognized), runs the implicit `restore` check plus the configured `rowcount` / `freshness` / `sql_assert` checks, guarantees container cleanup even on failure, and (if `cloud.endpoint` is set) reports the result over HTTP.
+
+Check semantics:
+- `rowcount` — counts rows in `table`; fails when the count drops more than `max_drop_pct` (default 10%) against the last known good value. Without a previous value (first run, or no cloud) it records a baseline and passes.
+- `freshness` — fails when `MAX(column)` in `table` is older than `max_age_hours`. The age is computed by the restored database itself, so no timestamp-format guessing.
+- `sql_assert` — runs `query` and compares the scalar result with `expect`.
 
 Not yet implemented:
-- `rowcount` / `freshness` checks — parsed from config and routed through the `internal/checks` registry, but no runners are implemented yet.
-- `undump run` — a daemon mode with per-target cron scheduling. For now, run `check` yourself (e.g. from your own cron/systemd timer).
+- `undump run` — a daemon mode with per-target cron scheduling. For now, run `check` yourself (e.g. from your own cron/systemd timer). This is also when the rowcount delta starts working continuously: the daemon will carry the cloud's `last_rowcount` from one scheduled run to the next.
 
 ## Development
 
