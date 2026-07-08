@@ -90,7 +90,9 @@ func TestRowcountAndFreshnessAgainstRestoredPostgres(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, session.Close()) }()
 
-	checkCtx := Context{DSN: session.DSN, Engine: "postgres", QueryScalar: session.QueryScalar}
+	// EngineName() instead of a literal: freshness must follow the engine
+	// detected from the dump, same as cmd/undump wires it
+	checkCtx := Context{DSN: session.DSN, Engine: session.EngineName(), QueryScalar: session.QueryScalar}
 
 	// rowcount: no previous value → baseline pass
 	result, err := Run(ctx, checkCtx, config.CheckConfig{Type: "rowcount", Table: "widgets"})
@@ -122,7 +124,7 @@ func TestRowcountAndFreshnessAgainstRestoredMySQL(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { assert.NoError(t, session.Close()) }()
 
-	checkCtx := Context{DSN: session.DSN, Engine: "mysql", QueryScalar: session.QueryScalar}
+	checkCtx := Context{DSN: session.DSN, Engine: session.EngineName(), QueryScalar: session.QueryScalar}
 
 	result, err := Run(ctx, checkCtx, config.CheckConfig{Type: "rowcount", Table: "widgets"})
 	require.NoError(t, err)
