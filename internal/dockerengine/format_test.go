@@ -27,6 +27,20 @@ func TestDetectEngine_MySQLDump(t *testing.T) {
 	assert.Equal(t, EngineMySQL, engine)
 }
 
+func TestEngineNameMapsDetectedEngine(t *testing.T) {
+	cases := []struct {
+		engine Engine
+		want   string
+	}{
+		{EnginePostgresPlain, "postgres"},
+		{EnginePostgresCustom, "postgres"},
+		{EngineMySQL, "mysql"},
+	}
+	for _, tc := range cases {
+		assert.Equal(t, tc.want, (&Session{engine: tc.engine}).EngineName())
+	}
+}
+
 func TestDetectEngine_EmptyFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "empty.dump")
 	require.NoError(t, os.WriteFile(path, []byte{}, 0644))

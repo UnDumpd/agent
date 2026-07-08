@@ -134,6 +134,17 @@ type Session struct {
 	containerID string
 	password    string
 	spec        engineSpec
+	engine      Engine
+}
+
+// EngineName reports the engine actually detected from the dump ("postgres"
+// or "mysql"). The target config's engine field is only a reporting label —
+// checks that build engine-specific SQL must use this instead.
+func (s *Session) EngineName() string {
+	if s.engine == EngineMySQL {
+		return "mysql"
+	}
+	return "postgres"
 }
 
 // Restore detects the dump's engine, spins up a throwaway container for it,
@@ -188,7 +199,7 @@ func Restore(ctx context.Context, dumpPath string) (*Session, error) {
 		return nil, fmt.Errorf("creating container: %w", err)
 	}
 
-	session := &Session{cli: cli, containerID: resp.ID, password: password, spec: spec}
+	session := &Session{cli: cli, containerID: resp.ID, password: password, spec: spec, engine: engine}
 
 	if err := cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		if cerr := session.Close(); cerr != nil {

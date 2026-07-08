@@ -125,7 +125,9 @@ func runTarget(ctx context.Context, target config.Target) models.RunReport {
 	})
 
 	if session.Outcome.OK {
-		checkCtx := checks.Context{DSN: session.DSN, Engine: target.Engine, QueryScalar: session.QueryScalar}
+		// target.Engine is a reporting label; SQL dialect choices must follow
+		// the engine actually detected from the dump.
+		checkCtx := checks.Context{DSN: session.DSN, Engine: session.EngineName(), QueryScalar: session.QueryScalar}
 		for _, c := range target.Checks {
 			if c.Type == "restore" {
 				continue
