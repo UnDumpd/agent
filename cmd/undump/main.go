@@ -19,7 +19,7 @@ import (
 	"undump/internal/sources/s3"
 )
 
-const version = "0.2.0" // x-release-please-version
+const version = "0.2.1" // x-release-please-version
 
 func main() {
 	root := &cobra.Command{

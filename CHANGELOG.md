@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/UnDumpd/agent/compare/v0.2.0...v0.2.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* use unprefixed release-please outputs for root package ([#3](https://github.com/UnDumpd/agent/issues/3)) ([bb3b26a](https://github.com/UnDumpd/agent/commit/bb3b26a41b85d8d9366708cfabc1ba6376df0b20))
+
 ## [0.2.0](https://github.com/UnDumpd/agent/compare/v0.1.0...v0.2.0) (2026-07-09)
 
 
