@@ -4,6 +4,7 @@
 
 <p align="center">
   <a href="https://undumpd.com"><img src="https://img.shields.io/badge/undumpd.com-website-2ea043" alt="undumpd.com"></a>
+  <a href="https://dash.undumpd.com/?demo=1&lang=en&utm_source=github&utm_medium=readme"><img src="https://img.shields.io/badge/live%20demo-no%20signup-7ee787" alt="Live demo"></a>
   <a href="https://github.com/UnDumpd/agent/actions/workflows/docker-build.yml"><img src="https://github.com/UnDumpd/agent/actions/workflows/docker-build.yml/badge.svg" alt="Docker build"></a>
   <img src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white" alt="Go 1.25">
   <img src="https://img.shields.io/badge/image-ghcr.io%2Fundumpd%2Fagent-2ea043?logo=docker&logoColor=white" alt="ghcr.io/undumpd/agent">
@@ -13,6 +14,8 @@
 Continuous **backup restore-testing** agent for Postgres and MySQL. Backups are everywhere; few teams find out they're broken until the day they actually need one. `undump` closes that gap by periodically pulling a real dump, restoring it into a throwaway container, and checking that the data is actually alive — all inside your own network.
 
 Part of UnDump — this agent is the open-source half. The other half, UnDump Cloud, only ever receives `pass`/`fail` results and metrics, never your data.
+
+**[Live demo of the cloud dashboard](https://dash.undumpd.com/?demo=1&lang=en&utm_source=github&utm_medium=readme)** — three fake targets with real run history, no signup.
 
 <p align="center">
   <img src="docs/assets/demo.svg" alt="undump check output: two targets pass, one fails because pg_restore hit end-of-file in a truncated dump" width="760">
