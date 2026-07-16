@@ -3,7 +3,8 @@
 # Don't write secrets in plaintext — use env:VAR_NAME references.
 
 cloud:
-  endpoint: "https://cloud.undump.dev"
+  # endpoint is optional — defaults to https://api.undumpd.com (UnDump Cloud
+  # SaaS) whenever api_key is set. Only set it if you're self-hosting.
   api_key: "env:UNDUMP_API_KEY"
 
 targets:

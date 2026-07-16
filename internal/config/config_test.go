@@ -60,6 +60,27 @@ func TestLoad_ParsesTargetsAndResolvesEnv(t *testing.T) {
 	assert.Equal(t, "invoices", target.Checks[0].Table)
 }
 
+func TestLoad_DefaultsEndpointWhenAPIKeySetButEndpointEmpty(t *testing.T) {
+	t.Setenv("TEST_UNDUMP_API_KEY", "secret-api-key")
+	path := writeTempConfig(t, `
+cloud:
+  api_key: "env:TEST_UNDUMP_API_KEY"
+targets: []
+`)
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	assert.Equal(t, config.DefaultCloudEndpoint, cfg.Cloud.Endpoint)
+}
+
+func TestLoad_LeavesEndpointEmptyWhenAPIKeyEmpty(t *testing.T) {
+	path := writeTempConfig(t, `
+targets: []
+`)
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	assert.Empty(t, cfg.Cloud.Endpoint)
+}
+
 func TestLoad_MissingEnvVarFails(t *testing.T) {
 	path := writeTempConfig(t, `
 cloud:

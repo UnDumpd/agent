@@ -48,6 +48,11 @@ type Target struct {
 	Checks   []CheckConfig `yaml:"checks"`
 }
 
+// DefaultCloudEndpoint is used when cloud.endpoint is left empty in the
+// config but cloud.api_key is set — the common case of reporting to the
+// UnDump Cloud SaaS rather than a self-hosted instance.
+const DefaultCloudEndpoint = "https://api.undumpd.com"
+
 // CloudConfig — where to send reports and with which key.
 type CloudConfig struct {
 	Endpoint string `yaml:"endpoint"`
@@ -74,6 +79,9 @@ func Load(path string) (*Config, error) {
 
 	if cfg.Cloud.APIKey, err = resolveEnv(cfg.Cloud.APIKey); err != nil {
 		return nil, fmt.Errorf("cloud.api_key: %w", err)
+	}
+	if cfg.Cloud.Endpoint == "" && cfg.Cloud.APIKey != "" {
+		cfg.Cloud.Endpoint = DefaultCloudEndpoint
 	}
 
 	for i := range cfg.Targets {

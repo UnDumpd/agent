@@ -31,12 +31,12 @@ A backup job that "succeeds" can still be worthless: the dump truncates mid-writ
   <img src="docs/assets/architecture.svg" alt="Architecture: inside your infrastructure the agent pulls a dump from S3, restores it into an ephemeral database container, runs checks, and removes the container; only an optional pass/fail report crosses the boundary to UnDump Cloud" width="960">
 </p>
 
-Restore happens **in your infrastructure**. The agent never uploads the dump, row contents, or credentials anywhere — only the run result (status, RTO, check names) leaves the machine, and only if you configure a cloud endpoint at all.
+Restore happens **in your infrastructure**. The agent never uploads the dump, row contents, or credentials anywhere — only the run result (status, RTO, check names) leaves the machine, and only if you set a cloud API key at all.
 
 ## Quick start
 
 ```bash
-cp undump.example.yaml undump.yaml         # fill in your S3 source and (optionally) cloud endpoint
+cp undump.example.yaml undump.yaml         # fill in your S3 source and (optionally) a cloud API key
 docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$(pwd)/undump.yaml:/app/undump.yaml" \
@@ -80,7 +80,7 @@ targets:
 
 ## Status
 
-Both commands fetch the dump from S3, auto-detect the engine from the dump's content, restore it into an ephemeral `postgres:18` or `mysql:8` container (Postgres custom-format, Postgres plain-SQL, and `mysqldump` plain-SQL are all recognized), run the implicit `restore` check plus the configured `rowcount` / `freshness` / `sql_assert` checks, guarantee container cleanup even on failure, and (if `cloud.endpoint` is set) report the result over HTTP:
+Both commands fetch the dump from S3, auto-detect the engine from the dump's content, restore it into an ephemeral `postgres:18` or `mysql:8` container (Postgres custom-format, Postgres plain-SQL, and `mysqldump` plain-SQL are all recognized), run the implicit `restore` check plus the configured `rowcount` / `freshness` / `sql_assert` checks, guarantee container cleanup even on failure, and (if `cloud.api_key` is set) report the result over HTTP:
 
 - `undump check --config ...` — a single pass over every target, then exit. Useful for a one-off run or when you'd rather drive scheduling yourself (cron, systemd timer, CI).
 - `undump run --config ...` — a daemon: every target's `schedule` (standard 5-field cron, e.g. `"0 * * * *"`, or `"@every 1h"`) is loaded once at startup and run on its own timer until SIGINT/SIGTERM. A schedule is required on every target for `run` (it's optional and ignored by `check`). Shutdown waits for any restore already in flight to finish and clean up its container before the process exits. If a target's restore outlasts its own schedule, the next tick for that target is skipped rather than piling up concurrent restores.

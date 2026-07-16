@@ -12,8 +12,7 @@ There is no default path, no config auto-discovery, and no environment-variable 
 
 ```yaml
 cloud:            # optional — where to send run reports
-  endpoint: "https://cloud.undump.dev"
-  api_key: "env:UNDUMP_API_KEY"
+  api_key: "env:UNDUMP_API_KEY"   # endpoint defaults to UnDump Cloud SaaS if omitted
 
 targets:          # one entry per backup you want restore-tested
   - name: "prod-billing"
@@ -48,12 +47,12 @@ No other fields resolve `env:` references.
 
 | Field | Type | Description |
 |---|---|---|
-| `endpoint` | string | Base URL of the UnDump Cloud API (or anything implementing the same contract). The report is `POST`ed to `{endpoint}/v1/runs`. |
+| `endpoint` | string | Optional. Base URL of the UnDump Cloud API (or anything implementing the same contract). The report is `POST`ed to `{endpoint}/v1/runs`. Defaults to `https://api.undumpd.com` when `api_key` is set — only set this if you're self-hosting the cloud. |
 | `api_key` | string | Sent as `Authorization: Bearer <key>`. Accepts `env:`. |
 
 Behavior:
 
-- If **either** field is empty, reporting is skipped entirely and the agent logs that the cloud is not configured. Fully offline operation is a supported mode, not a degraded one.
+- Reporting is driven by `api_key` alone: leave it unset (or empty) for fully offline operation — a supported mode, not a degraded one. Set it and reports go to `endpoint`, or to `https://api.undumpd.com` if `endpoint` is left blank.
 - Delivery has a **15-second timeout** and a failed delivery (network error, non-2xx response) is logged as a warning but **never fails the check run** — the restore test itself is the point; the report is a bonus.
 - The payload is JSON containing only run metadata: target name, engine, source URI, agent version, timestamps, status, RTO in seconds, dump size in bytes, per-check results, and the error text if the run errored. No table data, no rows, no credentials — the payload shape is defined in [`internal/models/models.go`](internal/models/models.go).
 
