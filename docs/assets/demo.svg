@@ -1,0 +1,47 @@
+<svg width="760" height="290" viewBox="0 0 760 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Animated terminal: undump check restores every target and prints a pass/fail line per backup" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+  <style>
+    .cover { animation: type 16s steps(36, end) infinite; }
+    @keyframes type {
+      0%, 3%   { transform: translateX(0); }
+      19%      { transform: translateX(330px); }
+      100%     { transform: translateX(330px); }
+    }
+    .l1 { animation: l1 16s linear infinite; }
+    @keyframes l1 { 0%, 22% { opacity: 0; } 23%, 96% { opacity: 1; } 99%, 100% { opacity: 0; } }
+    .l2 { animation: l2 16s linear infinite; }
+    @keyframes l2 { 0%, 30% { opacity: 0; } 31%, 96% { opacity: 1; } 99%, 100% { opacity: 0; } }
+    .l3 { animation: l3 16s linear infinite; }
+    @keyframes l3 { 0%, 38% { opacity: 0; } 39%, 96% { opacity: 1; } 99%, 100% { opacity: 0; } }
+    .l4 { animation: l4 16s linear infinite; }
+    @keyframes l4 { 0%, 43% { opacity: 0; } 44%, 96% { opacity: 1; } 99%, 100% { opacity: 0; } }
+    .l5 { animation: l5 16s linear infinite; }
+    @keyframes l5 { 0%, 52% { opacity: 0; } 53%, 96% { opacity: 1; } 99%, 100% { opacity: 0; } }
+    .cursor { animation: blink 1.1s steps(1, end) infinite; }
+    @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+  </style>
+
+  <!-- window -->
+  <rect x="1" y="1" width="758" height="288" rx="12" fill="#0d1117" stroke="#30363d"/>
+  <rect x="1" y="1" width="758" height="38" rx="12" fill="#161b22"/>
+  <rect x="1" y="27" width="758" height="12" fill="#161b22"/>
+  <circle cx="26" cy="20" r="6" fill="#f85149"/>
+  <circle cx="48" cy="20" r="6" fill="#d29922"/>
+  <circle cx="70" cy="20" r="6" fill="#3fb950"/>
+  <text x="380" y="25" font-size="12" fill="#6e7a87" text-anchor="middle">undump check</text>
+  <line x1="1" y1="39" x2="759" y2="39" stroke="#30363d"/>
+
+  <!-- typed command (a bg-colored cover slides right, revealing it) -->
+  <g font-size="14">
+    <text x="24" y="74" fill="#7d8590">$ <tspan fill="#e6edf3">undump check --config undump.yaml</tspan><tspan class="cursor" fill="#e6edf3">▍</tspan></text>
+    <rect class="cover" x="41" y="60" width="330" height="20" fill="#0d1117"/>
+  </g>
+
+  <!-- output -->
+  <g font-size="14">
+    <text class="l1" x="24" y="112" fill="#c9d1d9"><tspan fill="#3fb950" font-weight="700">[PASS ]</tspan> prod-billing rto=14.32s checks=1</text>
+    <text class="l2" x="24" y="140" fill="#c9d1d9"><tspan fill="#3fb950" font-weight="700">[PASS ]</tspan> prod-identity rto=11.08s checks=1</text>
+    <text class="l3" x="24" y="168" fill="#c9d1d9"><tspan fill="#f85149" font-weight="700">[FAIL ]</tspan> staging-analytics rto=7.44s checks=1</text>
+    <text class="l4" x="41" y="196" fill="#8b949e">restore: restore rc=1: pg_restore: error: could not read from input file</text>
+    <text class="l5" x="24" y="240" fill="#6e7a87"># that staging dump “ran fine” every night for a month.</text>
+  </g>
+</svg>
