@@ -1,0 +1,3 @@
+*.dump binary
+testdata/*.sql binary
+*.sh text eol=lf
