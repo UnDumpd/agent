@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0](https://github.com/UnDumpd/agent/compare/v0.2.0...v0.3.0) (2026-07-18)
+
+
+### Features
+
+* add cloud reporting and scheduled runs ([c5ecf7b](https://github.com/UnDumpd/agent/commit/c5ecf7b5b4d1c3bd295f36f47d6a84f687772a4c))
+* add integrity checks ([e963588](https://github.com/UnDumpd/agent/commit/e96358826d758c632d730794eb7005418617346a))
+* fetch backups from s3 ([8f42ec7](https://github.com/UnDumpd/agent/commit/8f42ec7c309aa2eb06847fa17fc04085bf92c27f))
+* load backup targets from yaml ([2914f31](https://github.com/UnDumpd/agent/commit/2914f310da7e2610005b15860cda10b9acb4ba23))
+* restore postgres and mysql dumps ([de8a11a](https://github.com/UnDumpd/agent/commit/de8a11a7385fa37a925c7db012b474475e8b47f5))
+
 ## [0.2.0](https://github.com/UnDumpd/agent/compare/v0.1.0...v0.2.0) (2026-07-09)
 
 
