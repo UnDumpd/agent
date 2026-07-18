@@ -1,0 +1,63 @@
+# Example config for the UnDump agent.
+# Copy to undump.yaml and fill in your own values.
+# Don't write secrets in plaintext — use env:VAR_NAME references.
+
+cloud:
+  # endpoint is optional — defaults to https://api.undumpd.com (UnDump Cloud
+  # SaaS) whenever api_key is set. Only set it if you're self-hosting.
+  api_key: "env:UNDUMP_API_KEY"
+
+targets:
+  - name: "prod-billing"
+    engine: "postgres"
+    schedule: "0 * * * *"          # hourly
+    source:
+      type: "s3"
+      uri: "s3://backups/billing/latest.dump"
+      endpoint_url: "https://s3.example.ru"   # for S3-compatible endpoints
+      access_key: "env:S3_ACCESS_KEY"
+      secret_key: "env:S3_SECRET_KEY"
+      region: "ru-central-1"
+    checks:
+      - type: "rowcount"
+        table: "invoices"
+        max_drop_pct: 10.0
+      - type: "freshness"
+        table: "invoices"
+        column: "created_at"
+        max_age_hours: 24
+      - type: "sql_assert"
+        id: "no_orphan_invoices"
+        query: "SELECT count(*) FROM invoices WHERE customer_id IS NULL"
+        expect: "0"
+
+  - name: "prod-identity"
+    engine: "postgres"
+    schedule: "30 */6 * * *"       # every 6 hours
+    source:
+      type: "s3"
+      uri: "s3://backups/identity/"   # prefix: picks the most recently modified object
+      pattern: "*.dump"               # ...but only among files matching this glob
+      endpoint_url: "https://s3.example.ru"
+      access_key: "env:S3_ACCESS_KEY"
+      secret_key: "env:S3_SECRET_KEY"
+    checks:
+      - type: "freshness"
+        table: "users"
+        column: "updated_at"
+        max_age_hours: 12
+
+  - name: "prod-orders-mysql"
+    engine: "mysql"                # reporting label; the restore engine is auto-detected from the dump itself
+    schedule: "0 3 * * *"          # nightly
+    source:
+      type: "s3"
+      uri: "s3://backups/orders/"     # mysqldump plain-SQL dumps (the "-- MySQL dump" header is how they're detected)
+      pattern: "*.sql"
+      endpoint_url: "https://s3.example.ru"
+      access_key: "env:S3_ACCESS_KEY"
+      secret_key: "env:S3_SECRET_KEY"
+    checks:
+      - type: "rowcount"
+        table: "orders"
+        max_drop_pct: 5.0
