@@ -74,7 +74,7 @@ targets:
 	require.NoError(t, err)
 	require.Len(t, cfg.Targets, 1)
 	assert.Equal(t, "local", cfg.Targets[0].Source.Type)
-	assert.Equal(t, filepath.Join(filepath.Dir(path), "/backups/latest.dump"), cfg.Targets[0].Source.Path)
+	assert.Equal(t, filepath.Join(filepath.Dir(path), "backups", "latest.dump"), cfg.Targets[0].Source.Path)
 	assert.Equal(t, 5*time.Minute, cfg.Targets[0].Source.MinAge.Duration)
 	assert.False(t, cfg.Targets[0].Source.MinAge.Set)
 }
@@ -92,7 +92,7 @@ targets:
 	cfg, err := config.Load(path)
 	require.NoError(t, err)
 	require.Len(t, cfg.Targets, 1)
-	assert.Equal(t, filepath.Join(filepath.Dir(path), "/backups"), cfg.Targets[0].Source.Path)
+	assert.Equal(t, filepath.Join(filepath.Dir(path), "backups"), cfg.Targets[0].Source.Path)
 	assert.Equal(t, "*.dump", cfg.Targets[0].Source.Pattern)
 }
 
