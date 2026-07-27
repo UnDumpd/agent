@@ -20,7 +20,7 @@ import (
 
 // Fetch downloads one dump into destDir. Prefix URIs select the newest object,
 // optionally filtered by Pattern.
-func Fetch(ctx context.Context, src config.S3Source, destDir string) (path string, size int64, err error) {
+func Fetch(ctx context.Context, src config.SourceConfig, destDir string) (path string, size int64, err error) {
 	bucket, key, err := parseURI(src.URI)
 	if err != nil {
 		return "", 0, err
@@ -47,7 +47,7 @@ func Fetch(ctx context.Context, src config.S3Source, destDir string) (path strin
 	return dest, info.Size(), nil
 }
 
-func newClient(src config.S3Source) *awss3.Client {
+func newClient(src config.SourceConfig) *awss3.Client {
 	opts := awss3.Options{
 		Region:       "us-east-1",
 		Credentials:  awscreds.NewStaticCredentialsProvider(src.AccessKey, src.SecretKey, ""),

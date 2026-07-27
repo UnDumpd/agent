@@ -15,8 +15,8 @@ import (
 
 // Fixed dev credentials for the local docker-compose S3-compatible service
 // (see .env.example, docker-compose.yml). Not production secrets.
-func testSource(uri string) config.S3Source {
-	return config.S3Source{
+func testSource(uri string) config.SourceConfig {
+	return config.SourceConfig{
 		Type:        "s3",
 		URI:         uri,
 		EndpointURL: "http://minio:9000",

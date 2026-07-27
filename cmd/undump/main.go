@@ -16,7 +16,7 @@ import (
 	"undump/internal/dockerengine"
 	"undump/internal/models"
 	"undump/internal/reportclient"
-	"undump/internal/sources/s3"
+	"undump/internal/sources"
 )
 
 const version = "0.2.0" // x-release-please-version
@@ -78,37 +78,50 @@ func logReport(report models.RunReport) {
 	}
 }
 
-// runTarget fetches, restores, and checks one target. Operational errors are
+// runTarget acquires, restores, and checks one target. Operational errors are
 // recorded in the report so another target can still run.
 func runTarget(ctx context.Context, target config.Target, lastRowcount *int64) models.RunReport {
 	started := time.Now().UTC()
 	report := models.RunReport{
 		TargetName:   target.Name,
 		Engine:       target.Engine,
-		SourceURI:    target.Source.URI,
+		SourceURI:    sources.ReportURI(target.Source),
 		AgentVersion: version,
 		Checks:       []models.CheckResult{},
 	}
 
-	tmpDir, err := os.MkdirTemp("", "undump-")
+	tmpDir, err := prepareAcquisitionDest(target.Source)
 	if err != nil {
 		return finalizeError(report, started, fmt.Errorf("creating temp directory: %w", err))
 	}
-	defer func() {
-		if rmErr := os.RemoveAll(tmpDir); rmErr != nil {
-			slog.Warn("failed to remove temp directory", "path", tmpDir, "error", rmErr)
-		}
-	}()
-
-	dumpPath, size, err := s3.Fetch(ctx, target.Source, tmpDir)
-	if err != nil {
-		return finalizeError(report, started, fmt.Errorf("downloading dump: %w", err))
+	if tmpDir != "" {
+		defer func() {
+			if rmErr := os.RemoveAll(tmpDir); rmErr != nil {
+				slog.Warn("failed to remove temp directory", "path", tmpDir, "error", rmErr)
+			}
+		}()
 	}
-	report.DumpSizeBytes = &size
 
-	session, err := dockerengine.Restore(ctx, dumpPath)
+	artifact, err := sources.Acquire(ctx, target.Source, tmpDir)
 	if err != nil {
-		return finalizeError(report, started, fmt.Errorf("restoring: %w", err))
+		phase := "acquiring dump"
+		if target.Source.Type == "s3" {
+			phase = "downloading dump"
+		}
+		return finalizeError(report, started, fmt.Errorf("%s: %w", phase, err))
+	}
+	report.DumpSizeBytes = &artifact.Size
+	report.SourceURI = artifact.ReportURI
+
+	session, err := dockerengine.Restore(ctx, artifact.Path)
+	if err != nil {
+		return finalizeRuntimeError(
+			report,
+			started,
+			target.Source,
+			"restoring local backup: failed",
+			fmt.Errorf("restoring: %w", err),
+		)
 	}
 	defer func() {
 		if cerr := session.Close(); cerr != nil {
@@ -146,7 +159,13 @@ func runTarget(ctx context.Context, target config.Target, lastRowcount *int64) m
 					slog.Info("unsupported check skipped", "type", c.Type, "target", target.Name)
 					continue
 				}
-				return finalizeError(report, started, fmt.Errorf("running check %s: %w", c.Type, err))
+				return finalizeRuntimeError(
+					report,
+					started,
+					target.Source,
+					fmt.Sprintf("running local backup check %s: failed", c.Type),
+					fmt.Errorf("running check %s: %w", c.Type, err),
+				)
 			}
 			report.Checks = append(report.Checks, result)
 		}
@@ -156,6 +175,26 @@ func runTarget(ctx context.Context, target config.Target, lastRowcount *int64) m
 	report.StartedAt = started
 	report.FinishedAt = time.Now().UTC()
 	return report
+}
+
+func prepareAcquisitionDest(src config.SourceConfig) (string, error) {
+	if src.Type != "s3" {
+		return "", nil
+	}
+	return os.MkdirTemp("", "undump-")
+}
+
+func finalizeRuntimeError(
+	report models.RunReport,
+	started time.Time,
+	src config.SourceConfig,
+	localMessage string,
+	err error,
+) models.RunReport {
+	if src.Type == "local" {
+		err = errors.New(localMessage)
+	}
+	return finalizeError(report, started, err)
 }
 
 func finalizeError(report models.RunReport, started time.Time, err error) models.RunReport {

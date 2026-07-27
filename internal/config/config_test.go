@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -58,6 +59,153 @@ func TestLoad_ParsesTargetsAndResolvesEnv(t *testing.T) {
 	require.Len(t, target.Checks, 1)
 	assert.Equal(t, "rowcount", target.Checks[0].Type)
 	assert.Equal(t, "invoices", target.Checks[0].Table)
+}
+
+func TestLoad_ParsesLocalExactFileSource(t *testing.T) {
+	path := writeTempConfig(t, `
+targets:
+  - name: local
+    source:
+      type: local
+      path: backups/latest.dump
+`)
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Targets, 1)
+	assert.Equal(t, "local", cfg.Targets[0].Source.Type)
+	assert.Equal(t, filepath.Join(filepath.Dir(path), "/backups/latest.dump"), cfg.Targets[0].Source.Path)
+	assert.Equal(t, 5*time.Minute, cfg.Targets[0].Source.MinAge.Duration)
+	assert.False(t, cfg.Targets[0].Source.MinAge.Set)
+}
+
+func TestLoad_ParsesLocalDirectorySource(t *testing.T) {
+	path := writeTempConfig(t, `
+targets:
+  - name: local
+    source:
+      type: local
+      path: backups
+      pattern: "*.dump"
+`)
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Targets, 1)
+	assert.Equal(t, filepath.Join(filepath.Dir(path), "/backups"), cfg.Targets[0].Source.Path)
+	assert.Equal(t, "*.dump", cfg.Targets[0].Source.Pattern)
+}
+
+func TestLoad_PreservesExplicitZeroLocalMinAge(t *testing.T) {
+	path := writeTempConfig(t, `
+targets:
+  - name: local
+    source:
+      type: local
+      path: /backups
+      min_age: 0s
+`)
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Targets, 1)
+	assert.Zero(t, cfg.Targets[0].Source.MinAge.Duration)
+	assert.True(t, cfg.Targets[0].Source.MinAge.Set)
+}
+
+func TestLoad_RejectsInvalidLocalMinAge(t *testing.T) {
+	path := writeTempConfig(t, `
+targets:
+  - name: local
+    source:
+      type: local
+      path: /backups
+      min_age: soon
+`)
+
+	_, err := config.Load(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "min_age")
+	assert.Contains(t, err.Error(), "invalid duration")
+}
+
+func TestLoad_RejectsNegativeLocalMinAge(t *testing.T) {
+	path := writeTempConfig(t, `
+targets:
+  - name: local
+    source:
+      type: local
+      path: /backups
+      min_age: -1s
+`)
+
+	_, err := config.Load(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "targets[0].source.min_age")
+	assert.Contains(t, err.Error(), "must not be negative")
+}
+
+func TestLoad_RejectsMissingLocalPath(t *testing.T) {
+	path := writeTempConfig(t, `
+targets:
+  - name: local
+    source:
+      type: local
+`)
+
+	_, err := config.Load(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "targets[0].source.path")
+	assert.Contains(t, err.Error(), "required")
+}
+
+func TestLoad_RejectsUnsupportedSourceType(t *testing.T) {
+	path := writeTempConfig(t, `
+targets:
+  - name: remote
+    source:
+      type: ftp
+`)
+
+	_, err := config.Load(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "targets[0].source.type")
+	assert.Contains(t, err.Error(), `"ftp"`)
+}
+
+func TestLoad_ResolvesRelativeLocalPathFromConfigDirectory(t *testing.T) {
+	path := writeTempConfig(t, `
+targets:
+  - name: local
+    source:
+      type: local
+      path: backups/latest.dump
+`)
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Targets, 1)
+	expected, err := filepath.Abs(filepath.Join(filepath.Dir(path), "backups", "latest.dump"))
+	require.NoError(t, err)
+	assert.Equal(t, expected, cfg.Targets[0].Source.Path)
+}
+
+func TestLoad_DoesNotResolveS3CredentialsForLocalSource(t *testing.T) {
+	path := writeTempConfig(t, `
+targets:
+  - name: local
+    source:
+      type: local
+      path: /backups/latest.dump
+      access_key: env:TEST_LOCAL_UNUSED_ACCESS_KEY
+      secret_key: env:TEST_LOCAL_UNUSED_SECRET_KEY
+`)
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Targets, 1)
+	assert.Equal(t, "env:TEST_LOCAL_UNUSED_ACCESS_KEY", cfg.Targets[0].Source.AccessKey)
+	assert.Equal(t, "env:TEST_LOCAL_UNUSED_SECRET_KEY", cfg.Targets[0].Source.SecretKey)
 }
 
 func TestLoad_DefaultCloudEndpoint(t *testing.T) {
@@ -156,13 +304,16 @@ targets:
 }
 
 func TestLoad_RealExampleFile(t *testing.T) {
-	t.Setenv("UNDUMP_API_KEY", "x")
 	t.Setenv("S3_ACCESS_KEY", "x")
 	t.Setenv("S3_SECRET_KEY", "x")
 
 	cfg, err := config.Load("../../undump.example.yaml")
 	require.NoError(t, err)
-	assert.Len(t, cfg.Targets, 3)
+	assert.Empty(t, cfg.Cloud.APIKey)
+	assert.Len(t, cfg.Targets, 4)
 	assert.Equal(t, "prod-billing", cfg.Targets[0].Name)
 	assert.Equal(t, "mysql", cfg.Targets[2].Engine)
+	assert.Equal(t, "local-billing", cfg.Targets[3].Name)
+	assert.Equal(t, "local", cfg.Targets[3].Source.Type)
+	assert.Equal(t, 5*time.Minute, cfg.Targets[3].Source.MinAge.Duration)
 }

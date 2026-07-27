@@ -4,21 +4,41 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-// S3Source describes a dump stored in S3-compatible storage.
-type S3Source struct {
-	Type        string `yaml:"type"`
-	URI         string `yaml:"uri"`
-	EndpointURL string `yaml:"endpoint_url"`
-	AccessKey   string `yaml:"access_key"`
-	SecretKey   string `yaml:"secret_key"`
-	Region      string `yaml:"region"`
-	// Pattern filters object basenames when URI points to a prefix.
-	Pattern string `yaml:"pattern"`
+// Duration is a YAML duration that records whether it was explicitly set.
+type Duration struct {
+	time.Duration
+	Set bool
+}
+
+// UnmarshalYAML parses a duration written using Go duration syntax.
+func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
+	parsed, err := time.ParseDuration(value.Value)
+	if err != nil {
+		return fmt.Errorf("min_age: %w", err)
+	}
+	d.Duration = parsed
+	d.Set = true
+	return nil
+}
+
+// SourceConfig describes a configured backup source.
+type SourceConfig struct {
+	Type        string   `yaml:"type"`
+	URI         string   `yaml:"uri"`
+	EndpointURL string   `yaml:"endpoint_url"`
+	AccessKey   string   `yaml:"access_key"`
+	SecretKey   string   `yaml:"secret_key"`
+	Region      string   `yaml:"region"`
+	Path        string   `yaml:"path"`
+	Pattern     string   `yaml:"pattern"`
+	MinAge      Duration `yaml:"min_age"`
 }
 
 // CheckConfig contains the fields used by all supported check types.
@@ -37,7 +57,7 @@ type CheckConfig struct {
 type Target struct {
 	Name     string        `yaml:"name"`
 	Engine   string        `yaml:"engine"`
-	Source   S3Source      `yaml:"source"`
+	Source   SourceConfig  `yaml:"source"`
 	Schedule string        `yaml:"schedule"`
 	Checks   []CheckConfig `yaml:"checks"`
 }
@@ -78,14 +98,37 @@ func Load(path string) (*Config, error) {
 
 	for i := range cfg.Targets {
 		src := &cfg.Targets[i].Source
-		if src.AccessKey, err = resolveEnv(src.AccessKey); err != nil {
-			return nil, fmt.Errorf("targets[%d].source.access_key: %w", i, err)
-		}
-		if src.SecretKey, err = resolveEnv(src.SecretKey); err != nil {
-			return nil, fmt.Errorf("targets[%d].source.secret_key: %w", i, err)
-		}
-		if src.Pattern != "" && !strings.HasSuffix(src.URI, "/") {
-			return nil, fmt.Errorf("targets[%d].source.pattern: pattern is only valid when source.uri is a prefix (must end with \"/\")", i)
+		switch src.Type {
+		case "local":
+			if src.Path == "" {
+				return nil, fmt.Errorf("targets[%d].source.path: required for local source", i)
+			}
+			if !src.MinAge.Set {
+				src.MinAge.Duration = 5 * time.Minute
+			}
+			if src.MinAge.Duration < 0 {
+				return nil, fmt.Errorf("targets[%d].source.min_age: must not be negative", i)
+			}
+			if !filepath.IsAbs(src.Path) {
+				configPath, absErr := filepath.Abs(path)
+				if absErr != nil {
+					return nil, fmt.Errorf("resolving config path %s: %w", path, absErr)
+				}
+				src.Path = filepath.Join(filepath.Dir(configPath), src.Path)
+			}
+			src.Path = filepath.Clean(src.Path)
+		case "s3":
+			if src.AccessKey, err = resolveEnv(src.AccessKey); err != nil {
+				return nil, fmt.Errorf("targets[%d].source.access_key: %w", i, err)
+			}
+			if src.SecretKey, err = resolveEnv(src.SecretKey); err != nil {
+				return nil, fmt.Errorf("targets[%d].source.secret_key: %w", i, err)
+			}
+			if src.Pattern != "" && !strings.HasSuffix(src.URI, "/") {
+				return nil, fmt.Errorf("targets[%d].source.pattern: pattern is only valid when source.uri is a prefix (must end with \"/\")", i)
+			}
+		default:
+			return nil, fmt.Errorf("targets[%d].source.type: unsupported source type %q", i, src.Type)
 		}
 	}
 
