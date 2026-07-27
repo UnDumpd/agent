@@ -3,9 +3,9 @@
 # Don't write secrets in plaintext — use env:VAR_NAME references.
 
 cloud:
-  # endpoint is optional — defaults to https://api.undumpd.com (UnDump Cloud
-  # SaaS) whenever api_key is set. Only set it if you're self-hosting.
-  api_key: "env:UNDUMP_API_KEY"
+  # Reporting is disabled by default. Uncomment api_key to send run metadata
+  # and check results to UnDump Cloud; the endpoint defaults to its SaaS API.
+  # api_key: "env:UNDUMP_API_KEY"
 
 targets:
   - name: "prod-billing"
@@ -61,3 +61,16 @@ targets:
       - type: "rowcount"
         table: "orders"
         max_drop_pct: 5.0
+
+  - name: "local-billing"
+    engine: "postgres"
+    schedule: "15 * * * *"         # hourly, at 15 minutes past
+    source:
+      type: "local"
+      path: "/backups"             # path inside the agent container
+      pattern: "*.dump"            # newest eligible direct child by modification time
+      min_age: "5m"                # ignore files that may still be written
+    checks:
+      - type: "rowcount"
+        table: "invoices"
+        max_drop_pct: 10.0

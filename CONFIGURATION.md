@@ -54,7 +54,7 @@ Behavior:
 
 - Reporting is driven by `api_key` alone: leave it unset (or empty) for fully offline operation — a supported mode, not a degraded one. Set it and reports go to `endpoint`, or to `https://api.undumpd.com` if `endpoint` is left blank.
 - Delivery has a **15-second timeout** and a failed delivery (network error, non-2xx response) is logged as a warning but **never fails the check run** — the restore test itself is the point; the report is a bonus.
-- The payload is JSON containing only run metadata: target name, engine, source URI, agent version, timestamps, status, RTO in seconds, dump size in bytes, per-check results, and the error text if the run errored. No table data, no rows, no credentials — the payload shape is defined in [`internal/models/models.go`](internal/models/models.go).
+- The payload is JSON containing run metadata: target name, engine, source URI, agent version, timestamps, status, RTO in seconds, dump size in bytes, per-check results (including their values and details), and the error text if the run errored. Backup files, dump contents, and source credentials are never sent. The payload shape is defined in [`internal/models/models.go`](internal/models/models.go).
 
 Example payload:
 
@@ -75,7 +75,9 @@ Example payload:
 }
 ```
 
-`status` is `pass` (restored, all checks passed), `fail` (restored, but a check failed), or `error` (couldn't even get that far — S3 unreachable, Docker unavailable, etc.; the `error` field carries the message).
+`status` is `pass` (restored, all checks passed), `fail` (restored, but a check failed), or `error` (couldn't even get that far — a source unavailable, Docker unavailable, etc.; the `error` field carries the message).
+
+For a local source, a successful acquisition reports `source_uri` as `local://<basename>` (for example, `local://billing.dump`). If acquisition fails before a file is selected, it reports `local://unresolved`. Local-source runtime error text is also sanitized so reports never contain the configured host path.
 
 The cloud replies with `{"run_id": <int>, "last_rowcount": <int|null>}`, where `last_rowcount` is the value of the target's most recent *passing* `rowcount` check — the delta base for the next run. `undump check`'s one-shot invocations ignore the response body (there is no "next run" to carry it to); `undump run` reads it and feeds it into that target's next scheduled `rowcount` check.
 
@@ -95,15 +97,38 @@ Targets run **sequentially**, in file order. A failure in one target never abort
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `type` | string | yes | Only `s3` is supported today. |
-| `uri` | string | yes | Either a full object key (`s3://bucket/path/file.dump`) or a **prefix** ending in `/` (`s3://bucket/path/`). With a prefix, the agent lists the objects under it and picks the one with the most recent `LastModified` — i.e. "always test the newest backup". |
-| `pattern` | string (glob) | no | Narrows prefix selection to objects whose **basename** matches the glob, e.g. `*.dump` to skip checksum or log files sitting in the same prefix. Only valid when `uri` is a prefix — combining `pattern` with a full object key is a config error at load time. |
+| `type` | string | yes | `s3` or `local`. |
+| `uri` | string | for `s3` | Either a full object key (`s3://bucket/path/file.dump`) or a **prefix** ending in `/` (`s3://bucket/path/`). With a prefix, the agent lists the objects under it and picks the one with the most recent `LastModified` — i.e. "always test the newest backup". |
+| `path` | string | for `local` | A regular file or directory available to the agent. Relative paths are resolved from the directory containing `undump.yaml`, not the current working directory. |
+| `pattern` | string (glob) | no | Narrows S3 prefix selection or local directory selection to entries whose **basename** matches the glob, e.g. `*.dump`. It is invalid with a full S3 object key or an exact local file. |
+| `min_age` | string (duration) | no | Local sources only. Minimum age since modification; defaults to `5m`. Uses Go duration syntax such as `30s`, `5m`, or `1h30m`. Applies to both exact files and directory candidates; set `0s` to disable the age guard. |
 | `endpoint_url` | string | no | For S3-compatible storage (MinIO, Ceph, Yandex Object Storage, …). Leave empty for AWS. Path-style addressing is always used, which is what non-AWS endpoints expect. |
-| `access_key` | string | yes | Accepts `env:`. |
-| `secret_key` | string | yes | Accepts `env:`. |
-| `region` | string | no | Defaults to `us-east-1`. Many S3-compatible services accept any value, but AWS itself will care. |
+| `access_key` | string | for `s3` | Accepts `env:`. |
+| `secret_key` | string | for `s3` | Accepts `env:`. |
+| `region` | string | no | S3 only. Defaults to `us-east-1`. Many S3-compatible services accept any value, but AWS itself will care. |
 
-Access is **read-only**: the agent lists and downloads objects, nothing else. The dump is downloaded into a temporary directory on the agent host and deleted when the target finishes, pass or fail.
+An exact local file:
+
+```yaml
+source:
+  type: "local"
+  path: "./backups/billing.dump"
+  min_age: "5m"
+```
+
+A local directory:
+
+```yaml
+source:
+  type: "local"
+  path: "/backups"
+  pattern: "*.dump"
+  min_age: "10m"
+```
+
+Directory scanning is nonrecursive. The agent considers only regular files that are direct children of the directory, applies `pattern` to each basename, excludes files younger than `min_age`, and selects the eligible file with the newest modification time. If modification times tie, the lexically first basename wins.
+
+Source access is **read-only**. For S3, the agent lists and downloads objects, then deletes the temporary download when the target finishes. For local sources, there is no host-side staging copy: the agent reads the original file and transfers it into the ephemeral database container without changing or deleting the source.
 
 ### `targets[].checks[]`
 
@@ -115,6 +140,8 @@ Fields are a union across check types; `type` decides which apply.
 | `freshness` | `table`, `column`, `max_age_hours` | Fail if `MAX(column)` is older than `max_age_hours` — catches "the backup restores fine but is three weeks old". The age is computed by the restored database itself (`EXTRACT(EPOCH ...)` on Postgres, `TIMESTAMPDIFF` on MySQL), so no timestamp-format guessing. An empty table / all-NULL column is a **fail**, not an error. |
 | `sql_assert` | `id`, `query`, `expect` | Run an arbitrary SQL query against the restored database and fail unless the scalar result equals `expect`. `id` names the check in reports (`sql_assert:<id>`). |
 
+> **`sql_assert` privacy:** the returned scalar, configured expected value, and result detail are included in `RunReport` when cloud reporting is enabled. Queries must return only non-sensitive assertion scalars. Do not select emails, tokens, PII, secrets, or other values you do not want reported.
+>
 > All three check types run for Postgres and MySQL inside the restored database container. The agent host needs no database client tools. The `restore` check is implicit for every target and does not appear in the config.
 >
 > **`rowcount`'s previous value** comes from the cloud's ingest response (`last_rowcount` — the most recent *passing* rowcount for the target), carried in memory from one scheduled run to the next. `undump check` performs one run per invocation with nowhere to carry that value to, so under `check` every `rowcount` records a baseline and passes; the continuous delta only accumulates under `undump run` (see below), and only resets when the daemon restarts.
@@ -154,10 +181,13 @@ The agent itself defines no environment variables — you choose the names via `
 docker run --rm \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$(pwd)/undump.yaml:/app/undump.yaml" \
+  -v /host/backups:/backups:ro \
   -e S3_ACCESS_KEY=... \
   -e S3_SECRET_KEY=... \
   -e UNDUMP_API_KEY=... \
   ghcr.io/undumpd/agent check --config /app/undump.yaml
 ```
+
+When the agent itself runs in Docker, a local source's configured `path` is inside the agent container. Mount the host backup directory read-only, as above, and configure `path: "/backups"` (or a file beneath it).
 
 `DOCKER_HOST`, `DOCKER_TLS_VERIFY`, and friends are honored via the standard Docker client environment if you point the agent at a remote Docker daemon instead of mounting the socket.
