@@ -91,6 +91,34 @@ func TestRowcountUsesDefaultThresholdWhenUnset(t *testing.T) {
 	assert.Equal(t, ">= 90", *result.Expected)
 }
 
+func TestRowcountUsesMongoQueryForMongoEngine(t *testing.T) {
+	checkCtx := Context{
+		Engine:      "mongo",
+		QueryScalar: fakeScalar(t, `print(db.getCollection("widgets").countDocuments())`, "42"),
+	}
+
+	result, err := Run(context.Background(), checkCtx, config.CheckConfig{Type: "rowcount", Table: "widgets"})
+
+	require.NoError(t, err)
+	assert.Equal(t, models.CheckStatusPass, result.Status)
+	assert.Equal(t, "42", *result.Value)
+}
+
+// Collection names that are not valid JS identifiers (hyphens, dots, leading
+// digits) must be passed through getCollection as a quoted string, not spliced
+// in as db.<name>, which would be a syntax error in mongosh.
+func TestRowcountQuotesNonIdentifierCollectionName(t *testing.T) {
+	checkCtx := Context{
+		Engine:      "mongo",
+		QueryScalar: fakeScalar(t, `print(db.getCollection("audit-events").countDocuments())`, "7"),
+	}
+
+	result, err := Run(context.Background(), checkCtx, config.CheckConfig{Type: "rowcount", Table: "audit-events"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "7", *result.Value)
+}
+
 func TestRowcountRequiresTable(t *testing.T) {
 	_, err := Run(context.Background(), Context{}, config.CheckConfig{Type: "rowcount"})
 

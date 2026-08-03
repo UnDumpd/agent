@@ -31,8 +31,14 @@ func runFreshness(ctx context.Context, checkCtx Context, cfg config.CheckConfig)
 		query = fmt.Sprintf("SELECT EXTRACT(EPOCH FROM (now() - MAX(%s))) FROM %s", cfg.Column, cfg.Table)
 	case "mysql":
 		query = fmt.Sprintf("SELECT TIMESTAMPDIFF(SECOND, MAX(%s), NOW()) FROM %s", cfg.Column, cfg.Table)
+	case "mongo":
+		query = fmt.Sprintf(
+			`var d=db.getCollection(%s).aggregate([{$group:{_id:null,m:{$max:"$%s"}}}]).toArray();`+
+				`if(d.length===0||d[0].m==null){print("");}else{print((Date.now()-d[0].m.getTime())/1000);}`,
+			strconv.Quote(cfg.Table), cfg.Column,
+		)
 	default:
-		return models.CheckResult{}, fmt.Errorf("freshness supports postgres/mysql, got engine %q", checkCtx.Engine)
+		return models.CheckResult{}, fmt.Errorf("freshness supports postgres/mysql/mongo, got engine %q", checkCtx.Engine)
 	}
 
 	raw, err := checkCtx.QueryScalar(ctx, query)

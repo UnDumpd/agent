@@ -18,6 +18,7 @@ func TestDetectEngine(t *testing.T) {
 		{"pg custom", "../../testdata/sample_custom.dump", EnginePostgresCustom},
 		{"pg plain", "../../testdata/sample_plain.sql", EnginePostgresPlain},
 		{"mysql", "../../testdata/sample_mysql.sql", EngineMySQL},
+		{"mongo", "../../testdata/sample_mongo_dump", EngineMongo},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -36,6 +37,7 @@ func TestEngineNameMapsDetectedEngine(t *testing.T) {
 		{EnginePostgresPlain, "postgres"},
 		{EnginePostgresCustom, "postgres"},
 		{EngineMySQL, "mysql"},
+		{EngineMongo, "mongo"},
 	}
 	for _, tc := range cases {
 		assert.Equal(t, tc.want, (&Session{engine: tc.engine}).EngineName())
@@ -49,4 +51,33 @@ func TestDetectEngine_EmptyFile(t *testing.T) {
 	engine, err := detectEngine(path)
 	require.NoError(t, err)
 	assert.Equal(t, EnginePostgresPlain, engine)
+}
+
+func TestDetectEngine_UnrecognizedDirectory(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("hi"), 0644))
+
+	_, err := detectEngine(dir)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unrecognized dump directory")
+}
+
+func TestIsMongoDumpDir(t *testing.T) {
+	assert.True(t, IsMongoDumpDir("../../testdata/sample_mongo_dump"))
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("hi"), 0644))
+	assert.False(t, IsMongoDumpDir(dir))
+
+	// An orphan metadata file with no matching <base>.bson (an incomplete or
+	// aborted dump) must NOT be treated as a mongodump directory.
+	orphan := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(orphan, "widgets.metadata.json"), []byte("{}"), 0644))
+	assert.False(t, IsMongoDumpDir(orphan))
+
+	// A complete pair (metadata + matching bson) is recognized.
+	paired := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(paired, "widgets.metadata.json"), []byte("{}"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(paired, "widgets.bson"), []byte("\x00"), 0644))
+	assert.True(t, IsMongoDumpDir(paired))
 }

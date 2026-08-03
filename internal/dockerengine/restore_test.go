@@ -55,6 +55,22 @@ func TestRestore_MySQLFormat(t *testing.T) {
 	assert.Contains(t, session.DSN, "mysql://")
 }
 
+func TestRestore_MongoFormat(t *testing.T) {
+	ctx := context.Background()
+	session, err := Restore(ctx, "../../testdata/sample_mongo_dump")
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, session.Close()) }()
+
+	assert.True(t, session.Outcome.OK, session.Outcome.Detail)
+	assert.Greater(t, session.Outcome.RTOSeconds, 0.0)
+	assert.Contains(t, session.DSN, "mongodb://")
+	assert.Equal(t, "mongo", session.EngineName())
+
+	count, err := session.QueryScalar(ctx, "print(db.widgets.countDocuments())")
+	require.NoError(t, err)
+	assert.Equal(t, "3", count)
+}
+
 func TestRestore_ContainerRemovedAfterClose(t *testing.T) {
 	ctx := context.Background()
 	session, err := Restore(ctx, "../../testdata/sample_custom.dump")

@@ -75,13 +75,28 @@ func TestFreshnessFailsOnEmptyTable(t *testing.T) {
 	}
 }
 
+func TestFreshnessUsesMongoQueryForMongoEngine(t *testing.T) {
+	wantQuery := `var d=db.getCollection("widgets").aggregate([{$group:{_id:null,m:{$max:"$created_at"}}}]).toArray();` +
+		`if(d.length===0||d[0].m==null){print("");}else{print((Date.now()-d[0].m.getTime())/1000);}`
+	checkCtx := Context{
+		Engine:      "mongo",
+		QueryScalar: fakeScalar(t, wantQuery, "3600"),
+	}
+
+	result, err := Run(context.Background(), checkCtx, freshnessCfg())
+
+	require.NoError(t, err)
+	assert.Equal(t, models.CheckStatusPass, result.Status)
+	assert.Equal(t, "1.00", *result.Value)
+}
+
 func TestFreshnessRejectsUnsupportedEngine(t *testing.T) {
-	checkCtx := Context{Engine: "mongo", QueryScalar: fakeScalar(t, "unused", "")}
+	checkCtx := Context{Engine: "cassandra", QueryScalar: fakeScalar(t, "unused", "")}
 
 	_, err := Run(context.Background(), checkCtx, freshnessCfg())
 
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "mongo")
+	assert.Contains(t, err.Error(), "cassandra")
 }
 
 func TestFreshnessValidatesConfig(t *testing.T) {

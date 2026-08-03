@@ -107,6 +107,48 @@ func TestRowcountAndFreshnessAgainstRestoredMySQL(t *testing.T) {
 	assert.Equal(t, models.CheckStatusPass, result.Status)
 }
 
+func TestRowcountAndFreshnessAgainstRestoredMongo(t *testing.T) {
+	ctx := context.Background()
+	session, err := dockerengine.Restore(ctx, "../../testdata/sample_mongo_dump")
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, session.Close()) }()
+
+	checkCtx := Context{Engine: session.EngineName(), QueryScalar: session.QueryScalar}
+
+	result, err := Run(ctx, checkCtx, config.CheckConfig{Type: "rowcount", Table: "widgets"})
+	require.NoError(t, err)
+	assert.Equal(t, models.CheckStatusPass, result.Status)
+	assert.Equal(t, "3", *result.Value)
+
+	result, err = Run(ctx, checkCtx, config.CheckConfig{Type: "freshness", Table: "widgets", Column: "created_at", MaxAgeHours: 87600})
+	require.NoError(t, err)
+	assert.Equal(t, models.CheckStatusPass, result.Status)
+
+	result, err = Run(ctx, checkCtx, config.CheckConfig{Type: "freshness", Table: "widgets", Column: "created_at", MaxAgeHours: 0.0001})
+	require.NoError(t, err)
+	assert.Equal(t, models.CheckStatusFail, result.Status)
+}
+
+func TestSQLAssertPassesAgainstRestoredMongo(t *testing.T) {
+	ctx := context.Background()
+	session, err := dockerengine.Restore(ctx, "../../testdata/sample_mongo_dump")
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, session.Close()) }()
+
+	result, err := Run(ctx, Context{Engine: "mongo", QueryScalar: session.QueryScalar}, config.CheckConfig{
+		Type:   "sql_assert",
+		ID:     "widget_count",
+		Query:  "db.widgets.countDocuments()",
+		Expect: "3",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "sql_assert:widget_count", result.Name)
+	assert.Equal(t, models.CheckStatusPass, result.Status)
+	assert.Equal(t, "3", *result.Value)
+	assert.Equal(t, "3", *result.Expected)
+}
+
 func TestSQLAssertPassesAgainstRestoredMySQL(t *testing.T) {
 	ctx := context.Background()
 	session, err := dockerengine.Restore(ctx, "../../testdata/sample_mysql.sql")

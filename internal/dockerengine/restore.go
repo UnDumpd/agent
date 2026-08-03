@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -27,10 +28,16 @@ import (
 const (
 	postgresImage     = "postgres:18"
 	mysqlImage        = "mysql:8"
+	mongoImage        = "mongo:8"
 	dbName            = "undump_check"
 	pgUser            = "undump"
 	readyTimeout      = 60 * time.Second
 	containerDumpPath = "/tmp/dump"
+	// mongoDumpDirName is the fixed name the source's collection directory
+	// is copied under inside the container, regardless of its host name —
+	// mongorestore infers the original database name from this directory
+	// name, and nsFrom/nsTo below remap it to dbName.
+	mongoDumpDirName = "src"
 )
 
 // engineSpec holds the engine-specific parts of a restore.
@@ -47,10 +54,14 @@ type engineSpec struct {
 }
 
 func specFor(engine Engine) engineSpec {
-	if engine == EngineMySQL {
+	switch engine {
+	case EngineMySQL:
 		return mysqlSpec
+	case EngineMongo:
+		return mongoSpec
+	default:
+		return postgresSpec(engine == EnginePostgresCustom)
 	}
-	return postgresSpec(engine == EnginePostgresCustom)
 }
 
 func postgresSpec(custom bool) engineSpec {
@@ -106,6 +117,34 @@ var mysqlSpec = engineSpec{
 	},
 }
 
+// mongoSpec restores a single mongodump collection directory. The ephemeral
+// container runs without authentication (no MONGO_INITDB_ROOT_*), matching
+// how the Postgres container is queried here — same trust model, both scoped
+// to a throwaway container bound to 127.0.0.1 and force-removed on Close.
+var mongoSpec = engineSpec{
+	image:        mongoImage,
+	port:         "27017/tcp",
+	tmpfsPath:    "/data/db",
+	containerEnv: func(password string) []string { return nil },
+	execEnv:      func(password string) []string { return nil },
+	readyCmd:     []string{"mongosh", "--quiet", "--eval", "db.adminCommand('ping')"},
+	restoreCmd: func(path string) []string {
+		return []string{
+			"mongorestore",
+			"--dir=" + path,
+			"--nsInclude=" + mongoDumpDirName + ".*",
+			"--nsFrom=" + mongoDumpDirName + ".*",
+			"--nsTo=" + dbName + ".*",
+		}
+	},
+	queryCmd: func(query string) []string {
+		return []string{"mongosh", "--quiet", dbName, "--eval", query}
+	},
+	dsn: func(password, host, port string) string {
+		return fmt.Sprintf("mongodb://%s:%s/%s", host, port, dbName)
+	},
+}
+
 // Outcome is the result of a restore attempt.
 type Outcome struct {
 	OK         bool
@@ -127,10 +166,14 @@ type Session struct {
 
 // EngineName reports the engine detected from the dump.
 func (s *Session) EngineName() string {
-	if s.engine == EngineMySQL {
+	switch s.engine {
+	case EngineMySQL:
 		return "mysql"
+	case EngineMongo:
+		return "mongo"
+	default:
+		return "postgres"
 	}
-	return "postgres"
 }
 
 // Restore starts an ephemeral database and restores dumpPath into it.
@@ -264,7 +307,16 @@ func (s *Session) waitReady(ctx context.Context) (hostPort string, err error) {
 }
 
 func (s *Session) restoreDump(ctx context.Context, dumpPath string) (ok bool, detail string, err error) {
-	if err := s.copyToContainer(ctx, dumpPath, containerDumpPath); err != nil {
+	info, err := os.Stat(dumpPath)
+	if err != nil {
+		return false, "", fmt.Errorf("statting dump: %w", err)
+	}
+	if info.IsDir() {
+		err = s.copyDirToContainer(ctx, dumpPath, containerDumpPath+"/"+mongoDumpDirName)
+	} else {
+		err = s.copyFileToContainer(ctx, dumpPath, containerDumpPath)
+	}
+	if err != nil {
 		return false, "", fmt.Errorf("copying dump into container: %w", err)
 	}
 
@@ -302,7 +354,7 @@ func (s *Session) exec(ctx context.Context, cmd []string, env []string) (exitCod
 	return inspect.ExitCode, stdout.String() + stderr.String(), nil
 }
 
-func (s *Session) copyToContainer(ctx context.Context, hostPath, containerPath string) error {
+func (s *Session) copyFileToContainer(ctx context.Context, hostPath, containerPath string) error {
 	data, err := os.ReadFile(hostPath)
 	if err != nil {
 		return err
@@ -314,6 +366,42 @@ func (s *Session) copyToContainer(ctx context.Context, hostPath, containerPath s
 	}
 	if _, err := tw.Write(data); err != nil {
 		return err
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	return s.cli.CopyToContainer(ctx, s.containerID, "/", &buf, container.CopyToContainerOptions{})
+}
+
+// copyDirToContainer copies the regular files directly inside hostDir (a
+// mongodump collection directory: *.bson, *.metadata.json, prelude.json;
+// nonrecursive, matching mongodump's flat per-database layout) into
+// containerPath inside the container.
+func (s *Session) copyDirToContainer(ctx context.Context, hostDir, containerPath string) error {
+	entries, err := os.ReadDir(hostDir)
+	if err != nil {
+		return fmt.Errorf("reading dump directory: %w", err)
+	}
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(hostDir, entry.Name()))
+		if err != nil {
+			return fmt.Errorf("reading %s: %w", entry.Name(), err)
+		}
+		if err := tw.WriteHeader(&tar.Header{
+			Name: containerPath + "/" + entry.Name(),
+			Mode: 0644,
+			Size: int64(len(data)),
+		}); err != nil {
+			return err
+		}
+		if _, err := tw.Write(data); err != nil {
+			return err
+		}
 	}
 	if err := tw.Close(); err != nil {
 		return err

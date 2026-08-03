@@ -13,6 +13,10 @@ import (
 const (
 	pgCustomSignature  = "PGDMP"
 	mysqlDumpSignature = "-- MySQL dump"
+	// mongoMetadataSuffix marks a mongodump collection directory: mongodump
+	// writes one <collection>.metadata.json per collection alongside its
+	// <collection>.bson, plus a prelude.json we don't need to inspect.
+	mongoMetadataSuffix = ".metadata.json"
 )
 
 // Engine identifies which restore path a dump needs.
@@ -24,11 +28,36 @@ const (
 	EnginePostgresPlain Engine = iota
 	EnginePostgresCustom
 	EngineMySQL
+	EngineMongo
 )
 
-// detectEngine recognizes pg_dump custom files and mysqldump headers. Other
-// input is treated as plain PostgreSQL.
+// detectEngine recognizes pg_dump custom files, mysqldump headers, and
+// mongodump collection directories. Other input is treated as plain
+// PostgreSQL.
 func detectEngine(dumpPath string) (Engine, error) {
+	info, err := os.Stat(dumpPath)
+	if err != nil {
+		return EnginePostgresPlain, fmt.Errorf("statting dump: %w", err)
+	}
+	if info.IsDir() {
+		return detectDirectoryEngine(dumpPath)
+	}
+	return detectFileEngine(dumpPath)
+}
+
+// detectDirectoryEngine recognizes a mongodump collection directory (the
+// only directory-shaped dump format this agent restores). Local source
+// resolution only ever hands a directory to Restore when it already matched
+// this same signature, so anything else here is an error rather than a
+// silent fallback.
+func detectDirectoryEngine(dumpPath string) (Engine, error) {
+	if IsMongoDumpDir(dumpPath) {
+		return EngineMongo, nil
+	}
+	return EnginePostgresPlain, fmt.Errorf("unrecognized dump directory %q: no %s file found", dumpPath, mongoMetadataSuffix)
+}
+
+func detectFileEngine(dumpPath string) (Engine, error) {
 	f, err := os.Open(dumpPath)
 	if err != nil {
 		return EnginePostgresPlain, fmt.Errorf("opening dump: %w", err)
@@ -57,4 +86,30 @@ func detectEngine(dumpPath string) (Engine, error) {
 	}
 
 	return EnginePostgresPlain, nil
+}
+
+// IsMongoDumpDir reports whether path is a directory whose direct children
+// include a mongodump collection metadata file (a *.metadata.json alongside
+// the matching *.bson). Exported so internal/sources/local can recognize the
+// same signature before acquisition, without duplicating it.
+func IsMongoDumpDir(path string) bool {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false
+	}
+	files := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		if entry.Type().IsRegular() {
+			files[entry.Name()] = struct{}{}
+		}
+	}
+	for name := range files {
+		if strings.HasSuffix(name, mongoMetadataSuffix) {
+			base := strings.TrimSuffix(name, mongoMetadataSuffix)
+			if _, ok := files[base+".bson"]; ok {
+				return true
+			}
+		}
+	}
+	return false
 }

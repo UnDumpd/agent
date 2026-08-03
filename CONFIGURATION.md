@@ -86,7 +86,7 @@ The cloud replies with `{"run_id": <int>, "last_rowcount": <int|null>}`, where `
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | yes | Identifier used in console output and reports. |
-| `engine` | string | yes | Reporting label (`postgres` or `mysql`) sent to UnDump Cloud. The restore path is still auto-detected from the dump's content, not from this field. See "The restore environment" below. |
+| `engine` | string | yes | Reporting label (`postgres`, `mysql`, or `mongo`) sent to UnDump Cloud. The restore path is still auto-detected from the dump's content, not from this field. See "The restore environment" below. |
 | `schedule` | string (cron) | required for `run`, ignored by `check` | Standard 5-field cron (`"0 * * * *"`) or a `robfig/cron` descriptor (`"@every 1h"`, `"@hourly"`, …). `undump check` always does a single pass over every target and never looks at this field; `undump run` requires it on every target and fails to start otherwise. |
 | `source` | object | yes | Where the dump comes from — see below. |
 | `checks` | list | no | Data checks to run against the restored database — see below. |
@@ -99,7 +99,7 @@ Targets run **sequentially**, in file order. A failure in one target never abort
 |---|---|---|---|
 | `type` | string | yes | `s3` or `local`. |
 | `uri` | string | for `s3` | Either a full object key (`s3://bucket/path/file.dump`) or a **prefix** ending in `/` (`s3://bucket/path/`). With a prefix, the agent lists the objects under it and picks the one with the most recent `LastModified` — i.e. "always test the newest backup". |
-| `path` | string | for `local` | A regular file or directory available to the agent. Relative paths are resolved from the directory containing `undump.yaml`, not the current working directory. |
+| `path` | string | for `local` | A regular file or directory available to the agent. Relative paths are resolved from the directory containing `undump.yaml`, not the current working directory. For a MongoDB target, point this directly at a `mongodump` collection directory (the folder holding `*.bson`/`*.metadata.json` files, e.g. `<mongodump output>/<dbname>/`) — see "MongoDB dumps" below. |
 | `pattern` | string (glob) | no | Narrows S3 prefix selection or local directory selection to entries whose **basename** matches the glob, e.g. `*.dump`. It is invalid with a full S3 object key or an exact local file. |
 | `min_age` | string (duration) | no | Local sources only. Minimum age since modification; defaults to `5m`. Uses Go duration syntax such as `30s`, `5m`, or `1h30m`. Applies to both exact files and directory candidates; set `0s` to disable the age guard. |
 | `endpoint_url` | string | no | For S3-compatible storage (MinIO, Ceph, Yandex Object Storage, …). Leave empty for AWS. Path-style addressing is always used, which is what non-AWS endpoints expect. |
@@ -130,19 +130,34 @@ Directory scanning is nonrecursive. The agent considers only regular files that 
 
 Source access is **read-only**. For S3, the agent lists and downloads objects, then deletes the temporary download when the target finishes. For local sources, there is no host-side staging copy: the agent reads the original file and transfers it into the ephemeral database container without changing or deleting the source.
 
+#### MongoDB dumps
+
+MongoDB dumps are directory-shaped, not a single file, so they're handled differently from the Postgres/MySQL case above. Point `path` directly at a `mongodump` collection directory — the folder whose direct children are `*.bson` and `*.metadata.json` files, e.g. the output of:
+
+```bash
+mongodump --db=mydb --out=/backups/mongo
+# restore-test this target against /backups/mongo/mydb
+```
+
+The agent recognizes this shape automatically (it looks for a `*.metadata.json` file among the directory's direct children — the same "detect from content, not from config" rule as the Postgres/MySQL signatures below) and treats the whole directory as one dump artifact instead of picking a file from inside it. `pattern` is invalid in this mode. `min_age` applies to the directory's own modification time.
+
+This local-directory path is the only supported way to feed a MongoDB dump into the agent today; an S3-hosted MongoDB dump (a prefix of many objects, rather than one object) isn't supported yet.
+
 ### `targets[].checks[]`
 
 Fields are a union across check types; `type` decides which apply.
 
 | `type` | Fields | Meaning |
 |---|---|---|
-| `rowcount` | `table`, `max_drop_pct` | `SELECT COUNT(*)` on `table`; fail if the count dropped more than `max_drop_pct` percent (default **10**; `0` also means the default — use a small positive value to forbid any drop) against the last known good value. With no previous value the check records a baseline and **passes**. |
-| `freshness` | `table`, `column`, `max_age_hours` | Fail if `MAX(column)` is older than `max_age_hours` — catches "the backup restores fine but is three weeks old". The age is computed by the restored database itself (`EXTRACT(EPOCH ...)` on Postgres, `TIMESTAMPDIFF` on MySQL), so no timestamp-format guessing. An empty table / all-NULL column is a **fail**, not an error. |
-| `sql_assert` | `id`, `query`, `expect` | Run an arbitrary SQL query against the restored database and fail unless the scalar result equals `expect`. `id` names the check in reports (`sql_assert:<id>`). |
+| `rowcount` | `table`, `max_drop_pct` | `SELECT COUNT(*)` on `table` (Postgres/MySQL) or `countDocuments()` on the `table`-named collection (MongoDB); fail if the count dropped more than `max_drop_pct` percent (default **10**; `0` also means the default — use a small positive value to forbid any drop) against the last known good value. With no previous value the check records a baseline and **passes**. |
+| `freshness` | `table`, `column`, `max_age_hours` | Fail if the newest value of `column` is older than `max_age_hours` — catches "the backup restores fine but is three weeks old". The age is computed by the restored database itself (`EXTRACT(EPOCH ...)` on Postgres, `TIMESTAMPDIFF` on MySQL, an aggregation `$max` on MongoDB), so no timestamp-format guessing. An empty table/collection or all-null column is a **fail**, not an error. |
+| `sql_assert` | `id`, `query`, `expect` | Run a query against the restored database and fail unless the scalar result equals `expect`. `id` names the check in reports (`sql_assert:<id>`). For Postgres/MySQL, `query` is SQL text. For MongoDB, `query` is a `mongosh` expression whose value becomes the checked scalar — write a bare expression such as `db.orders.countDocuments({status:"paid"})`, not a full script. |
 
 > **`sql_assert` privacy:** the returned scalar, configured expected value, and result detail are included in `RunReport` when cloud reporting is enabled. Queries must return only non-sensitive assertion scalars. Do not select emails, tokens, PII, secrets, or other values you do not want reported.
 >
-> All three check types run for Postgres and MySQL inside the restored database container. The agent host needs no database client tools. The `restore` check is implicit for every target and does not appear in the config.
+> All three check types run for Postgres, MySQL, and MongoDB inside the restored database container. The agent host needs no database client tools. The `restore` check is implicit for every target and does not appear in the config.
+>
+> For MongoDB, `table` in `rowcount`/`freshness` names a **collection**, not a SQL table.
 >
 > **`rowcount`'s previous value** comes from the cloud's ingest response (`last_rowcount` — the most recent *passing* rowcount for the target), carried in memory from one scheduled run to the next. `undump check` performs one run per invocation with nowhere to carry that value to, so under `check` every `rowcount` records a baseline and passes; the continuous delta only accumulates under `undump run` (see below), and only resets when the daemon restarts.
 
@@ -159,12 +174,12 @@ Fields are a union across check types; `type` decides which apply.
 Not configurable today, but worth knowing what happens on your Docker host for each target:
 
 - The agent talks to Docker via the standard environment (`DOCKER_HOST` etc., or the mounted `/var/run/docker.sock` when running in the published image).
-- Which database engine gets spun up is **auto-detected from the dump's content**, not from `targets[].engine` — that field is reporting-only today. Custom-format `pg_dump` (`PGDMP` magic bytes) and plain-SQL dumps (Postgres, or the default fallback for anything unrecognized) start a **`postgres:18`** container; dumps starting with the `-- MySQL dump` header that `mysqldump` emits start a **`mysql:8`** container instead. Checks follow the detected engine too: a mislabeled `engine` never sends the wrong SQL dialect at the restored database.
-- Each container gets a random one-shot password, database `undump_check`, storage on `tmpfs` (nothing touches disk), and its default port (5432 for Postgres, 3306 for MySQL) published on `127.0.0.1` only, on a random host port.
-- If the needed image is missing on the host, the agent **pulls it automatically** before starting the container (a pull failure is an infrastructure error → run status `error`). The pull happens before the RTO timer starts, so a cold image cache doesn't inflate the measured restore time. Pre-pull `postgres:18` / `mysql:8` when provisioning only if you want to avoid the one-time download during the first run.
+- Which database engine gets spun up is **auto-detected from the dump's content**, not from `targets[].engine` — that field is reporting-only today. Custom-format `pg_dump` (`PGDMP` magic bytes) and plain-SQL dumps (Postgres, or the default fallback for anything unrecognized) start a **`postgres:18`** container; dumps starting with the `-- MySQL dump` header that `mysqldump` emits start a **`mysql:8`** container; a directory whose direct children include a `mongodump` `*.metadata.json` file starts a **`mongo:8`** container. Checks follow the detected engine too: a mislabeled `engine` never sends the wrong query dialect at the restored database.
+- Each container gets a database/user named `undump_check` (MongoDB: a database named `undump_check`, populated by remapping the dump's original database name on restore), storage on `tmpfs` (nothing touches disk), and its default port (5432 for Postgres, 3306 for MySQL, 27017 for MongoDB) published on `127.0.0.1` only, on a random host port. Postgres and MySQL get a random one-shot password; the ephemeral MongoDB container runs without authentication — safe here not because of a shared credential model (there is none), but because, like every check container, it is throwaway, loopback-only, and force-removed on completion.
+- If the needed image is missing on the host, the agent **pulls it automatically** before starting the container (a pull failure is an infrastructure error → run status `error`). The pull happens before the RTO timer starts, so a cold image cache doesn't inflate the measured restore time. Pre-pull `postgres:18` / `mysql:8` / `mongo:8` when provisioning only if you want to avoid the one-time download during the first run.
 - Readiness is waited for up to **60 seconds**, then the run errors.
-- Postgres dump format is detected automatically within the Postgres path too: custom-format dumps go through `pg_restore --no-owner --no-acl`, plain-SQL dumps through `psql --set ON_ERROR_STOP=1` (without which psql happily exits 0 on broken SQL). MySQL support is currently **`mysqldump` plain SQL only** (no `.sql.gz`, no xtrabackup/physical backups) and restores via `mysql -uroot <db> < dump`.
-- Restore and all data checks run **inside** the container via docker exec — the agent host needs no Postgres or MySQL client tools.
+- Postgres dump format is detected automatically within the Postgres path too: custom-format dumps go through `pg_restore --no-owner --no-acl`, plain-SQL dumps through `psql --set ON_ERROR_STOP=1` (without which psql happily exits 0 on broken SQL). MySQL support is currently **`mysqldump` plain SQL only** (no `.sql.gz`, no xtrabackup/physical backups) and restores via `mysql -uroot <db> < dump`. MongoDB restores via `mongorestore` against the dump directory described in "MongoDB dumps" above; the official `mongo:8` image already bundles `mongorestore`/`mongosh` (`mongodb-database-tools`), so no extra install step runs at restore time.
+- Restore and all data checks run **inside** the container via docker exec — the agent host needs no Postgres, MySQL, or MongoDB client tools.
 - The container is force-removed when the target finishes, **including on failure and on infrastructure errors**.
 
 ## Exit codes

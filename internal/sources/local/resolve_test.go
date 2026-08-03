@@ -65,6 +65,54 @@ func TestResolve_DirectorySelectsNewestMatchingEligibleFile(t *testing.T) {
 	assert.Equal(t, int64(6), gotSize)
 }
 
+func TestResolve_MongoDumpDirectoryIsWholeArtifact(t *testing.T) {
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	dir := t.TempDir()
+	writeFileAt(t, filepath.Join(dir, "widgets.bson"), "bsondata", now.Add(-10*time.Minute))
+	writeFileAt(t, filepath.Join(dir, "widgets.metadata.json"), "{}", now.Add(-10*time.Minute))
+	writeFileAt(t, filepath.Join(dir, "prelude.json"), "{}", now.Add(-10*time.Minute))
+	require.NoError(t, os.Chtimes(dir, now.Add(-10*time.Minute), now.Add(-10*time.Minute)))
+
+	gotPath, gotSize, err := local.Resolve(config.SourceConfig{
+		Path:   dir,
+		MinAge: config.Duration{Duration: 5 * time.Minute, Set: true},
+	}, now)
+
+	require.NoError(t, err)
+	assert.Equal(t, dir, gotPath)
+	assert.Equal(t, int64(len("bsondata")+len("{}")+len("{}")), gotSize)
+}
+
+func TestResolve_MongoDumpDirectoryRejectsPattern(t *testing.T) {
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	dir := t.TempDir()
+	writeFileAt(t, filepath.Join(dir, "widgets.bson"), "bsondata", now.Add(-10*time.Minute))
+	writeFileAt(t, filepath.Join(dir, "widgets.metadata.json"), "{}", now.Add(-10*time.Minute))
+	require.NoError(t, os.Chtimes(dir, now.Add(-10*time.Minute), now.Add(-10*time.Minute)))
+
+	_, _, err := local.Resolve(config.SourceConfig{Path: dir, Pattern: "*.bson"}, now)
+
+	require.EqualError(t, err, "local source: pattern is invalid on a mongodump collection directory")
+}
+
+func TestResolve_MongoDumpDirectoryRespectsMinAge(t *testing.T) {
+	now := time.Date(2026, 7, 27, 12, 0, 0, 0, time.UTC)
+	dir := t.TempDir()
+	// The directory mtime is old, but a child .bson was just (re)written — as
+	// happens when a backup job overwrites a dump in place. min_age must key
+	// off the newest child file, not the directory, so this dump is rejected.
+	writeFileAt(t, filepath.Join(dir, "widgets.metadata.json"), "{}", now.Add(-10*time.Minute))
+	writeFileAt(t, filepath.Join(dir, "widgets.bson"), "bsondata", now.Add(-time.Minute))
+	require.NoError(t, os.Chtimes(dir, now.Add(-10*time.Minute), now.Add(-10*time.Minute)))
+
+	_, _, err := local.Resolve(config.SourceConfig{
+		Path:   dir,
+		MinAge: config.Duration{Duration: 5 * time.Minute, Set: true},
+	}, now)
+
+	require.EqualError(t, err, "local source: configured mongodump directory is younger than min_age")
+}
+
 func TestResolve_DirectoryRejectsInvalidPatternEvenWhenEmpty(t *testing.T) {
 	dir := t.TempDir()
 

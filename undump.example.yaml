@@ -74,3 +74,26 @@ targets:
       - type: "rowcount"
         table: "invoices"
         max_drop_pct: 10.0
+
+  - name: "local-sessions-mongo"
+    engine: "mongo"                # reporting label; the restore engine is auto-detected from the dump itself
+    schedule: "0 4 * * *"          # nightly
+    source:
+      type: "local"
+      # Point directly at a mongodump collection directory (the folder
+      # containing *.bson/*.metadata.json), e.g. the output of:
+      #   mongodump --db=sessions --out=/backups/mongo
+      path: "/backups/mongo/sessions"
+      min_age: "5m"
+    checks:
+      - type: "rowcount"
+        table: "sessions"           # a MongoDB collection name here
+        max_drop_pct: 10.0
+      - type: "freshness"
+        table: "sessions"
+        column: "updated_at"
+        max_age_hours: 6
+      - type: "sql_assert"
+        id: "no_orphan_sessions"
+        query: "db.sessions.countDocuments({user_id: null})"
+        expect: "0"

@@ -25,7 +25,11 @@ func runRowcount(ctx context.Context, checkCtx Context, cfg config.CheckConfig) 
 		return models.CheckResult{}, fmt.Errorf("rowcount requires a query runner")
 	}
 
-	raw, err := checkCtx.QueryScalar(ctx, "SELECT COUNT(*) FROM "+cfg.Table)
+	query := "SELECT COUNT(*) FROM " + cfg.Table
+	if checkCtx.Engine == "mongo" {
+		query = fmt.Sprintf("print(db.getCollection(%s).countDocuments())", strconv.Quote(cfg.Table))
+	}
+	raw, err := checkCtx.QueryScalar(ctx, query)
 	if err != nil {
 		return models.CheckResult{}, fmt.Errorf("counting rows in %s: %w", cfg.Table, err)
 	}
