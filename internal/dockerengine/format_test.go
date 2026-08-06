@@ -62,6 +62,28 @@ func TestDetectEngine_UnrecognizedDirectory(t *testing.T) {
 	assert.Contains(t, err.Error(), "unrecognized dump directory")
 }
 
+func TestIsMongoDumpFileSet(t *testing.T) {
+	tests := []struct {
+		name  string
+		names []string
+		want  bool
+	}{
+		{"nil slice", nil, false},
+		{"empty slice", []string{}, false},
+		{"unrelated names only", []string{"notes.txt", "README.md"}, false},
+		{"orphan metadata file only", []string{"widgets.metadata.json"}, false},
+		{"orphan bson file only", []string{"widgets.bson"}, false},
+		{"matched pair", []string{"widgets.metadata.json", "widgets.bson"}, true},
+		{"matched pair plus unrelated file", []string{"widgets.metadata.json", "widgets.bson", "prelude.json"}, true},
+		{"two collections, only one paired", []string{"orders.metadata.json", "widgets.metadata.json", "widgets.bson"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, IsMongoDumpFileSet(tt.names))
+		})
+	}
+}
+
 func TestIsMongoDumpDir(t *testing.T) {
 	assert.True(t, IsMongoDumpDir("../../testdata/sample_mongo_dump"))
 

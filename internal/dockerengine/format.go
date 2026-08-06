@@ -88,20 +88,13 @@ func detectFileEngine(dumpPath string) (Engine, error) {
 	return EnginePostgresPlain, nil
 }
 
-// IsMongoDumpDir reports whether path is a directory whose direct children
-// include a mongodump collection metadata file (a *.metadata.json alongside
-// the matching *.bson). Exported so internal/sources/local can recognize the
-// same signature before acquisition, without duplicating it.
-func IsMongoDumpDir(path string) bool {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		return false
-	}
-	files := make(map[string]struct{}, len(entries))
-	for _, entry := range entries {
-		if entry.Type().IsRegular() {
-			files[entry.Name()] = struct{}{}
-		}
+// IsMongoDumpFileSet reports whether names contain a mongodump collection
+// signature: a *.metadata.json alongside its matching *.bson. Split out of
+// IsMongoDumpDir so S3 sources can run the same check over object keys.
+func IsMongoDumpFileSet(names []string) bool {
+	files := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		files[name] = struct{}{}
 	}
 	for name := range files {
 		if strings.HasSuffix(name, mongoMetadataSuffix) {
@@ -112,4 +105,22 @@ func IsMongoDumpDir(path string) bool {
 		}
 	}
 	return false
+}
+
+// IsMongoDumpDir reports whether path is a directory whose direct children
+// include a mongodump collection metadata file (a *.metadata.json alongside
+// the matching *.bson). Exported so internal/sources/local can recognize the
+// same signature before acquisition, without duplicating it.
+func IsMongoDumpDir(path string) bool {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return false
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Type().IsRegular() {
+			names = append(names, entry.Name())
+		}
+	}
+	return IsMongoDumpFileSet(names)
 }
