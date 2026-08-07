@@ -127,6 +127,12 @@ func Load(path string) (*Config, error) {
 			if src.Pattern != "" && !strings.HasSuffix(src.URI, "/") {
 				return nil, fmt.Errorf("targets[%d].source.pattern: pattern is only valid when source.uri is a prefix (must end with \"/\")", i)
 			}
+			if !src.MinAge.Set {
+				src.MinAge.Duration = 5 * time.Minute
+			}
+			if src.MinAge.Duration < 0 {
+				return nil, fmt.Errorf("targets[%d].source.min_age: must not be negative", i)
+			}
 		default:
 			return nil, fmt.Errorf("targets[%d].source.type: unsupported source type %q", i, src.Type)
 		}
