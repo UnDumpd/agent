@@ -145,6 +145,79 @@ targets:
 	assert.Contains(t, err.Error(), "must not be negative")
 }
 
+func TestLoad_DefaultsS3MinAge(t *testing.T) {
+	t.Setenv("TEST_UNDUMP_API_KEY", "secret-api-key")
+	path := writeTempConfig(t, `
+cloud:
+  endpoint: "https://cloud.undump.dev"
+  api_key: "env:TEST_UNDUMP_API_KEY"
+targets:
+  - name: "s3-backup"
+    engine: "postgres"
+    schedule: "0 * * * *"
+    source:
+      type: "s3"
+      uri: "s3://backups/latest.dump"
+      access_key: "plain-access-key"
+      secret_key: "plain-secret-key"
+`)
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Targets, 1)
+	assert.Equal(t, 5*time.Minute, cfg.Targets[0].Source.MinAge.Duration)
+	assert.False(t, cfg.Targets[0].Source.MinAge.Set)
+}
+
+func TestLoad_PreservesExplicitZeroS3MinAge(t *testing.T) {
+	t.Setenv("TEST_UNDUMP_API_KEY", "secret-api-key")
+	path := writeTempConfig(t, `
+cloud:
+  endpoint: "https://cloud.undump.dev"
+  api_key: "env:TEST_UNDUMP_API_KEY"
+targets:
+  - name: "s3-backup"
+    engine: "postgres"
+    schedule: "0 * * * *"
+    source:
+      type: "s3"
+      uri: "s3://backups/latest.dump"
+      access_key: "plain-access-key"
+      secret_key: "plain-secret-key"
+      min_age: 0s
+`)
+
+	cfg, err := config.Load(path)
+	require.NoError(t, err)
+	require.Len(t, cfg.Targets, 1)
+	assert.Zero(t, cfg.Targets[0].Source.MinAge.Duration)
+	assert.True(t, cfg.Targets[0].Source.MinAge.Set)
+}
+
+func TestLoad_RejectsNegativeS3MinAge(t *testing.T) {
+	t.Setenv("TEST_UNDUMP_API_KEY", "secret-api-key")
+	path := writeTempConfig(t, `
+cloud:
+  endpoint: "https://cloud.undump.dev"
+  api_key: "env:TEST_UNDUMP_API_KEY"
+targets:
+  - name: "s3-backup"
+    engine: "postgres"
+    schedule: "0 * * * *"
+    source:
+      type: "s3"
+      uri: "s3://backups/latest.dump"
+      access_key: "plain-access-key"
+      secret_key: "plain-secret-key"
+      min_age: -1s
+`)
+
+	_, err := config.Load(path)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "targets[0].source.min_age")
+	assert.Contains(t, err.Error(), "must not be negative")
+}
+
 func TestLoad_RejectsMissingLocalPath(t *testing.T) {
 	path := writeTempConfig(t, `
 targets:
