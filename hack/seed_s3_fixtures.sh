@@ -17,5 +17,8 @@ MSYS_NO_PATHCONV=1 docker run --rm --network undump_default \
     mc cp /fixtures/sample_plain.sql local/undump-test/dumps/exact.sql &&
     mc cp /fixtures/sample_custom.dump local/undump-test/dumps/patterned/2026-07-01T00-00-00.dump &&
     mc cp /fixtures/sample_plain.sql local/undump-test/dumps/patterned/2026-07-02T00-00-00.sql &&
+    mc cp /fixtures/sample_mongo_dump/widgets.bson local/undump-test/dumps/mongo/widgets.bson &&
+    mc cp /fixtures/sample_mongo_dump/widgets.metadata.json local/undump-test/dumps/mongo/widgets.metadata.json &&
+    mc cp /fixtures/sample_mongo_dump/prelude.json local/undump-test/dumps/mongo/prelude.json &&
     mc ls --recursive local/undump-test
   '
