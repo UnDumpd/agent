@@ -2,10 +2,16 @@ package s3_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awscreds "github.com/aws/aws-sdk-go-v2/credentials"
+	awss3 "github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -66,4 +72,68 @@ func TestFetch_UnknownKeyFails(t *testing.T) {
 	dest := t.TempDir()
 	_, _, err := s3.Fetch(context.Background(), testSource("s3://undump-test/dumps/does-not-exist.dump"), dest)
 	assert.Error(t, err)
+}
+
+func TestFetch_MongoDumpPrefixDownloadsAllDirectChildren(t *testing.T) {
+	dest := t.TempDir()
+	src := testSource("s3://undump-test/dumps/mongo/")
+	src.MinAge = config.Duration{Duration: 0, Set: true}
+
+	path, _, err := s3.Fetch(context.Background(), src, dest)
+	require.NoError(t, err)
+	assert.Equal(t, dest, path)
+
+	entries, err := os.ReadDir(dest)
+	require.NoError(t, err)
+
+	names := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		require.False(t, entry.IsDir(), "unexpected directory entry %q", entry.Name())
+		names[entry.Name()] = true
+	}
+	assert.True(t, names["widgets.bson"])
+	assert.True(t, names["widgets.metadata.json"])
+	assert.True(t, names["prelude.json"])
+}
+
+func TestFetch_MongoDumpPrefixRejectsPattern(t *testing.T) {
+	dest := t.TempDir()
+	src := testSource("s3://undump-test/dumps/mongo/")
+	src.Pattern = "*.bson"
+	src.MinAge = config.Duration{Duration: 0, Set: true}
+
+	_, _, err := s3.Fetch(context.Background(), src, dest)
+	require.Error(t, err)
+	assert.Equal(t, "s3 source: pattern is invalid on a mongodump prefix", err.Error())
+}
+
+func TestFetch_MongoDumpPrefixTooYoungFails(t *testing.T) {
+	prefix := fmt.Sprintf("dumps/mongo-fresh-%s-%d/", strings.ReplaceAll(t.Name(), "/", "-"), time.Now().UnixNano())
+	uploadTestObject(t, prefix+"widgets.metadata.json", "{}")
+	uploadTestObject(t, prefix+"widgets.bson", "x")
+
+	dest := t.TempDir()
+	src := testSource("s3://undump-test/" + prefix)
+	src.MinAge = config.Duration{Duration: time.Hour, Set: true}
+
+	_, _, err := s3.Fetch(context.Background(), src, dest)
+	require.Error(t, err)
+	assert.Equal(t, "s3 source: mongodump prefix is younger than min_age", err.Error())
+}
+
+func uploadTestObject(t *testing.T, key, body string) {
+	t.Helper()
+	cli := awss3.New(awss3.Options{
+		Region:       "us-east-1",
+		Credentials:  awscreds.NewStaticCredentialsProvider("minioadmin", "minioadmin", ""),
+		UsePathStyle: true,
+		BaseEndpoint: aws.String("http://minio:9000"),
+	})
+	bucket := "undump-test"
+	_, err := cli.PutObject(context.Background(), &awss3.PutObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+		Body:   strings.NewReader(body),
+	})
+	require.NoError(t, err)
 }
