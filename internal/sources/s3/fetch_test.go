@@ -136,4 +136,12 @@ func uploadTestObject(t *testing.T, key, body string) {
 		Body:   strings.NewReader(body),
 	})
 	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		_, err := cli.DeleteObject(context.Background(), &awss3.DeleteObjectInput{
+			Bucket: &bucket,
+			Key:    &key,
+		})
+		assert.NoError(t, err)
+	})
 }
