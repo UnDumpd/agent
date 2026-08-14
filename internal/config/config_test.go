@@ -383,7 +383,7 @@ func TestLoad_RealExampleFile(t *testing.T) {
 	cfg, err := config.Load("../../undump.example.yaml")
 	require.NoError(t, err)
 	assert.Empty(t, cfg.Cloud.APIKey)
-	assert.Len(t, cfg.Targets, 5)
+	assert.Len(t, cfg.Targets, 6)
 	assert.Equal(t, "prod-billing", cfg.Targets[0].Name)
 	assert.Equal(t, "mysql", cfg.Targets[2].Engine)
 	assert.Equal(t, "local-billing", cfg.Targets[3].Name)
@@ -392,4 +392,7 @@ func TestLoad_RealExampleFile(t *testing.T) {
 	assert.Equal(t, "local-sessions-mongo", cfg.Targets[4].Name)
 	assert.Equal(t, "mongo", cfg.Targets[4].Engine)
 	assert.Equal(t, "/backups/mongo/sessions", cfg.Targets[4].Source.Path)
+	assert.Equal(t, "s3-sessions-mongo", cfg.Targets[5].Name)
+	assert.Equal(t, "mongo", cfg.Targets[5].Engine)
+	assert.Equal(t, "s3", cfg.Targets[5].Source.Type)
 }
