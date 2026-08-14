@@ -101,7 +101,7 @@ Targets run **sequentially**, in file order. A failure in one target never abort
 | `uri` | string | for `s3` | Either a full object key (`s3://bucket/path/file.dump`) or a **prefix** ending in `/` (`s3://bucket/path/`). With a prefix, the agent lists the objects under it and picks the one with the most recent `LastModified` — i.e. "always test the newest backup". |
 | `path` | string | for `local` | A regular file or directory available to the agent. Relative paths are resolved from the directory containing `undump.yaml`, not the current working directory. For a MongoDB target, point this directly at a `mongodump` collection directory (the folder holding `*.bson`/`*.metadata.json` files, e.g. `<mongodump output>/<dbname>/`) — see "MongoDB dumps" below. |
 | `pattern` | string (glob) | no | Narrows S3 prefix selection or local directory selection to entries whose **basename** matches the glob, e.g. `*.dump`. It is invalid with a full S3 object key or an exact local file. |
-| `min_age` | string (duration) | no | Local sources only. Minimum age since modification; defaults to `5m`. Uses Go duration syntax such as `30s`, `5m`, or `1h30m`. Applies to both exact files and directory candidates; set `0s` to disable the age guard. |
+| `min_age` | string (duration) | no | Local sources, and S3 sources whose prefix is a MongoDB dump directory (see below). Minimum age since modification; defaults to `5m`. Uses Go duration syntax such as `30s`, `5m`, or `1h30m`. Applies to both exact files and directory candidates; set `0s` to disable the age guard. |
 | `endpoint_url` | string | no | For S3-compatible storage (MinIO, Ceph, Yandex Object Storage, …). Leave empty for AWS. Path-style addressing is always used, which is what non-AWS endpoints expect. |
 | `access_key` | string | for `s3` | Accepts `env:`. |
 | `secret_key` | string | for `s3` | Accepts `env:`. |
@@ -141,7 +141,27 @@ mongodump --db=mydb --out=/backups/mongo
 
 The agent recognizes this shape automatically (it looks for a `*.metadata.json` file among the directory's direct children — the same "detect from content, not from config" rule as the Postgres/MySQL signatures below) and treats the whole directory as one dump artifact instead of picking a file from inside it. `pattern` is invalid in this mode. `min_age` applies to the directory's own modification time.
 
-This local-directory path is the only supported way to feed a MongoDB dump into the agent today; an S3-hosted MongoDB dump (a prefix of many objects, rather than one object) isn't supported yet.
+For an S3-hosted MongoDB dump, the `source.uri` must be a prefix ending in `/` pointing to the `mongodump` directory itself — the prefix that holds the `*.bson` and `*.metadata.json` files. The producer dumps into the same prefix on each run, overwriting the previous dump; the agent auto-detects the MongoDB shape from the file signatures, downloads every direct child of the prefix, and treats them as one dump artifact. `pattern` is invalid in this mode; `min_age` guards against downloading a prefix mid-upload, keyed off the newest object's `LastModified` timestamp.
+
+A local MongoDB example:
+
+```yaml
+source:
+  type: "local"
+  path: "/backups/mongo/sessions"
+  min_age: "5m"
+```
+
+An S3-hosted MongoDB example:
+
+```yaml
+source:
+  type: "s3"
+  uri: "s3://backups/mongo/sessions/"    # trailing slash: the dump prefix itself
+  access_key: "env:S3_ACCESS_KEY"
+  secret_key: "env:S3_SECRET_KEY"
+  min_age: "5m"                          # guard against mid-upload
+```
 
 ### `targets[].checks[]`
 
