@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.0](https://github.com/UnDumpd/agent/compare/v0.3.0...v0.4.0) (2026-08-17)
+
+
+### Features
+
+* apply min_age default/validation to S3 sources ([c072ea8](https://github.com/UnDumpd/agent/commit/c072ea896244c30b97e9b707d839c900155ff010))
+* restore-test MongoDB dumps from a local mongodump directory ([cf78499](https://github.com/UnDumpd/agent/commit/cf78499aba2dbee21ce125e120328f2de490abf5))
+* restore-test MongoDB dumps from an S3 prefix ([3730008](https://github.com/UnDumpd/agent/commit/37300080f931aec5704e4d73136bc5e21dd4b5cd))
+
 ## [0.3.0](https://github.com/UnDumpd/agent/compare/v0.2.0...v0.3.0) (2026-07-27)
 
 
