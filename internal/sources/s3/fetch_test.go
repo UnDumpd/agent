@@ -77,6 +77,9 @@ func TestFetch_UnknownKeyFails(t *testing.T) {
 func TestFetch_MongoDumpPrefixDownloadsAllDirectChildren(t *testing.T) {
 	dest := t.TempDir()
 	src := testSource("s3://undump-test/dumps/mongo/")
+	// The fixtures were seeded whenever someone last ran hack/seed_s3_fixtures.sh,
+	// so their age is not ours to predict — disable the guard here and test it
+	// separately below.
 	src.MinAge = config.Duration{Duration: 0, Set: true}
 
 	path, _, err := s3.Fetch(context.Background(), src, dest)
@@ -108,6 +111,9 @@ func TestFetch_MongoDumpPrefixRejectsPattern(t *testing.T) {
 }
 
 func TestFetch_MongoDumpPrefixTooYoungFails(t *testing.T) {
+	// Needs objects that are genuinely fresh, so upload them here instead of
+	// leaning on the seeded fixtures. The nanosecond suffix keeps concurrent or
+	// repeated runs from reading each other's prefix.
 	prefix := fmt.Sprintf("dumps/mongo-fresh-%s-%d/", strings.ReplaceAll(t.Name(), "/", "-"), time.Now().UnixNano())
 	uploadTestObject(t, prefix+"widgets.metadata.json", "{}")
 	uploadTestObject(t, prefix+"widgets.bson", "x")

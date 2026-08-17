@@ -26,8 +26,10 @@ var (
 	errMongoDumpTooYoung  = errors.New("s3 source: mongodump prefix is younger than min_age")
 )
 
-// Fetch downloads one dump into destDir. Prefix URIs select the newest object,
-// optionally filtered by Pattern.
+// Fetch downloads one dump into destDir and returns its path. A prefix URI
+// normally resolves to the newest object under it, optionally filtered by
+// Pattern; a prefix holding a mongodump collection is pulled whole instead,
+// and the returned path is destDir itself.
 func Fetch(ctx context.Context, src config.SourceConfig, destDir string) (path string, size int64, err error) {
 	bucket, key, err := parseURI(src.URI)
 	if err != nil {
@@ -98,10 +100,10 @@ func listObjects(ctx context.Context, cli *awss3.Client, bucket, prefix string) 
 	return out.Contents, nil
 }
 
-// latestKey selects the newest object (optionally filtered by pattern) from
-// the full objects slice. It runs over every object under prefix regardless
-// of nesting depth, matching the historical behavior of scanning the whole
-// prefix rather than just its direct children.
+// latestKey picks the newest object under prefix, optionally narrowed by
+// pattern. The scan deliberately includes nested keys — rotated dumps often
+// sit in dated subfolders, and restricting this to direct children would hide
+// them.
 func latestKey(objects []types.Object, prefix, bucket, pattern string) (string, error) {
 	var latestKey string
 	var latestTime time.Time
@@ -135,9 +137,9 @@ func latestKey(objects []types.Object, prefix, bucket, pattern string) (string, 
 	return latestKey, nil
 }
 
-// directChildren keeps only objects whose key, with prefix trimmed off the
-// front, is non-empty and contains no further "/" — i.e. direct children of
-// prefix, not objects nested deeper under it.
+// directChildren drops anything nested deeper than prefix. A mongodump
+// collection directory is flat, so nested keys mean the prefix holds
+// something else — rotated dumps, several databases — and not one dump.
 func directChildren(objects []types.Object, prefix string) []types.Object {
 	var children []types.Object
 	for _, obj := range objects {
@@ -153,8 +155,8 @@ func directChildren(objects []types.Object, prefix string) []types.Object {
 	return children
 }
 
-// isMongoDumpKeys reports whether objects' base filenames form a mongodump
-// collection signature (a *.metadata.json alongside its matching *.bson).
+// isMongoDumpKeys runs the same signature check local sources use, over
+// object basenames instead of directory entries.
 func isMongoDumpKeys(objects []types.Object) bool {
 	names := make([]string, 0, len(objects))
 	for _, obj := range objects {
@@ -166,13 +168,17 @@ func isMongoDumpKeys(objects []types.Object) bool {
 	return dockerengine.IsMongoDumpFileSet(names)
 }
 
-// fetchMongoDir downloads every object in objects (the direct children of a
-// prefix recognized as a mongodump collection) into destDir.
+// fetchMongoDir pulls a whole mongodump prefix into destDir. The prefix is
+// the dump artifact, so there is nothing to select inside it and pattern is
+// rejected rather than quietly ignored.
 func fetchMongoDir(ctx context.Context, cli *awss3.Client, bucket string, objects []types.Object, src config.SourceConfig, destDir string) (string, int64, error) {
 	if src.Pattern != "" {
 		return "", 0, errPatternOnMongoDump
 	}
 
+	// Unlike a single-object fetch, pulling a prefix is not atomic: a listing
+	// can catch a backup job halfway through uploading and mix fresh
+	// collections with stale ones. Hence min_age off the newest object.
 	var latest time.Time
 	for _, obj := range objects {
 		if obj.LastModified == nil {
@@ -186,6 +192,8 @@ func fetchMongoDir(ctx context.Context, cli *awss3.Client, bucket string, object
 		return "", 0, errMongoDumpTooYoung
 	}
 
+	// A failure mid-loop leaves partial files behind; the caller runs every S3
+	// fetch in a temp directory it removes afterwards.
 	var total int64
 	for _, obj := range objects {
 		if obj.Key == nil {
@@ -205,9 +213,9 @@ func fetchMongoDir(ctx context.Context, cli *awss3.Client, bucket string, object
 	return destDir, total, nil
 }
 
-// isOldEnough reports whether latest is at least minAge before now (boundary
-// inclusive). Mirrors internal/sources/local's helper of the same name,
-// taking a plain time.Time since S3 objects have no os.FileInfo.
+// isOldEnough mirrors the helper of the same name in internal/sources/local,
+// taking a plain time.Time because S3 objects have no os.FileInfo. Boundary
+// is inclusive, same as there.
 func isOldEnough(latest, now time.Time, minAge time.Duration) bool {
 	return !latest.After(now.Add(-minAge))
 }

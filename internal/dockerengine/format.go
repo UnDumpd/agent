@@ -88,10 +88,9 @@ func detectFileEngine(dumpPath string) (Engine, error) {
 	return EnginePostgresPlain, nil
 }
 
-// IsMongoDumpFileSet reports whether names contains a mongodump collection
-// signature: at least one *.metadata.json alongside its matching *.bson.
-// This is the core signature check, reused by both local directory scanning
-// (IsMongoDumpDir) and S3 object key detection (internal/sources/s3).
+// IsMongoDumpFileSet reports whether names contain a mongodump collection
+// signature: a *.metadata.json alongside its matching *.bson. Split out of
+// IsMongoDumpDir so S3 sources can run the same check over object keys.
 func IsMongoDumpFileSet(names []string) bool {
 	files := make(map[string]struct{}, len(names))
 	for _, name := range names {
