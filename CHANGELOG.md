@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/UnDumpd/agent/compare/v0.2.0...v0.3.0) (2026-07-27)
+
+
+### Features
+
+* add local backup sources ([9b97a61](https://github.com/UnDumpd/agent/commit/9b97a61708af899f6aad8ecffe9e1801ef5b145d))
+
 ## [0.2.0](https://github.com/UnDumpd/agent/compare/v0.1.0...v0.2.0) (2026-07-09)
 
 
