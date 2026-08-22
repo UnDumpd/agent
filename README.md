@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="undump — continuous backup restore-testing for Postgres and MySQL" width="820">
+  <img src="docs/assets/banner.svg" alt="undump — continuous backup restore-testing for Postgres, MySQL, and MongoDB" width="820">
 </p>
 
 <p align="center">
@@ -11,7 +11,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-BUSL--1.1-blue" alt="License: BUSL-1.1"></a>
 </p>
 
-Continuous **backup restore-testing** agent for Postgres and MySQL. Backups are everywhere; few teams find out they're broken until the day they actually need one. `undump` closes that gap by periodically selecting a real dump from S3 or the local filesystem, restoring it into a throwaway container, and checking that the data is actually alive — all inside your own network.
+Continuous **backup restore-testing** agent for Postgres, MySQL, and MongoDB. Backups are everywhere; few teams find out they're broken until the day they actually need one. `undump` closes that gap by periodically selecting a real dump from S3 or the local filesystem, restoring it into a throwaway container, and checking that the data is actually alive — all inside your own network.
 
 Part of UnDump — this agent is the source-available half. The other half, UnDump Cloud, only ever receives run metadata and check results, never backup files, dump contents, or source credentials.
 
@@ -57,7 +57,7 @@ Or build it locally instead of pulling the published image:
 docker build -t undump .
 ```
 
-The agent needs `docker.sock` mounted — that's how it spins up and tears down the ephemeral database container it restores into. The restore images (`postgres:18` / `mysql:8`) are pulled automatically on first use; pre-pull them yourself only if you want to avoid the one-time download during the first check run.
+The agent needs `docker.sock` mounted — that's how it spins up and tears down the ephemeral database container it restores into. The restore images (`postgres:18` / `mysql:8` / `mongo:8`) are pulled automatically on first use; pre-pull them yourself only if you want to avoid the one-time download during the first check run.
 
 ## Config
 
@@ -79,17 +79,19 @@ targets:
         max_drop_pct: 10.0
 ```
 
+MongoDB dumps are shaped differently: a `mongodump` collection directory is itself the dump, so point `path` straight at it, or give `uri` the S3 prefix holding the `*.bson`/`*.metadata.json` files. Either way the agent recognizes the shape from the files themselves and restores the whole thing — see [MongoDB dumps](CONFIGURATION.md#mongodb-dumps).
+
 ## Status
 
-Both commands acquire the configured dump from S3 or the local filesystem, detect its format, and restore it into an ephemeral `postgres:18` or `mysql:8` container. They run the implicit `restore` check followed by any configured `rowcount`, `freshness`, and `sql_assert` checks. The container is force-removed after the run, including failure paths. If `cloud.api_key` is set, the result is also reported over HTTP.
+Both commands acquire the configured dump from S3 or the local filesystem, detect its format, and restore it into an ephemeral `postgres:18`, `mysql:8`, or `mongo:8` container. They run the implicit `restore` check followed by any configured `rowcount`, `freshness`, and `sql_assert` checks. The container is force-removed after the run, including failure paths. If `cloud.api_key` is set, the result is also reported over HTTP.
 
 - `undump check --config ...` — a single pass over every target, then exit. Useful for a one-off run or when you'd rather drive scheduling yourself (cron, systemd timer, CI).
 - `undump run --config ...` — a daemon: every target's `schedule` (standard 5-field cron, e.g. `"0 * * * *"`, or `"@every 1h"`) is loaded once at startup and run on its own timer until SIGINT/SIGTERM. A schedule is required on every target for `run` (it's optional and ignored by `check`). Shutdown waits for any restore already in flight to finish and clean up its container before the process exits. If a target's restore outlasts its own schedule, the next tick for that target is skipped rather than piling up concurrent restores.
 
 Check semantics:
-- `rowcount` — counts rows in `table`; fails when the count drops more than `max_drop_pct` (default 10%) against the last known good value. Without a previous value (first run of a target since the daemon started, or no cloud configured) it records a baseline and passes.
-- `freshness` — fails when `MAX(column)` in `table` is older than `max_age_hours`. The age is computed by the restored database itself, so no timestamp-format guessing.
-- `sql_assert` — runs `query` and compares the scalar result with `expect`. The scalar, expected value, and result detail are reported when cloud reporting is enabled, so return only a non-sensitive assertion value; never select emails, tokens, PII, or secrets.
+- `rowcount` — counts rows in `table`, or documents in the collection `table` names on MongoDB; fails when the count drops more than `max_drop_pct` (default 10%) against the last known good value. Without a previous value (first run of a target since the daemon started, or no cloud configured) it records a baseline and passes.
+- `freshness` — fails when the newest `column` value in `table` is older than `max_age_hours`. The age is computed by the restored database itself — `EXTRACT(EPOCH ...)` on Postgres, `TIMESTAMPDIFF` on MySQL, a `$max` aggregation on MongoDB — so no timestamp-format guessing.
+- `sql_assert` — runs `query` and compares the scalar result with `expect`. On Postgres and MySQL `query` is SQL; on MongoDB it's a bare `mongosh` expression such as `db.orders.countDocuments({status:"paid"})`. The scalar, expected value, and result detail are reported when cloud reporting is enabled, so return only a non-sensitive assertion value; never select emails, tokens, PII, or secrets.
 
 `rowcount`'s delta base (`last_rowcount`) comes from the cloud's response to the previous report and is carried in memory between scheduled runs of the same target — this only accumulates under `run`. A restart of the daemon, or `check`'s one-shot invocations, always start from a fresh baseline.
 

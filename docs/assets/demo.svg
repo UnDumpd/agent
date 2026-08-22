@@ -39,7 +39,7 @@
   <!-- output -->
   <g font-size="14">
     <text class="l1" x="24" y="112" fill="#c9d1d9"><tspan fill="#3fb950" font-weight="700">[PASS ]</tspan> prod-billing rto=14.32s checks=1</text>
-    <text class="l2" x="24" y="140" fill="#c9d1d9"><tspan fill="#3fb950" font-weight="700">[PASS ]</tspan> prod-identity rto=11.08s checks=1</text>
+    <text class="l2" x="24" y="140" fill="#c9d1d9"><tspan fill="#3fb950" font-weight="700">[PASS ]</tspan> prod-sessions-mongo rto=11.08s checks=1</text>
     <text class="l3" x="24" y="168" fill="#c9d1d9"><tspan fill="#f85149" font-weight="700">[FAIL ]</tspan> staging-analytics rto=7.44s checks=1</text>
     <text class="l4" x="41" y="196" fill="#8b949e">restore: restore rc=1: pg_restore: error: could not read from input file</text>
     <text class="l5" x="24" y="240" fill="#6e7a87"># that staging dump “ran fine” every night for a month.</text>

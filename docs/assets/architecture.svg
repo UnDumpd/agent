@@ -35,8 +35,8 @@
     <line x1="302" y1="142" x2="558" y2="142" stroke="#30363d"/>
     <g font-size="13" fill="#c9d1d9">
       <text x="302" y="170"><tspan fill="#3fb950" font-weight="700">1</tspan>  acquire the dump</text>
-      <text x="302" y="198"><tspan fill="#3fb950" font-weight="700">2</tspan>  docker run — ephemeral pg/mysql</text>
-      <text x="302" y="226"><tspan fill="#3fb950" font-weight="700">3</tspan>  pg_restore / psql / mysql</text>
+      <text x="302" y="198"><tspan fill="#3fb950" font-weight="700">2</tspan>  docker run — ephemeral database</text>
+      <text x="302" y="226"><tspan fill="#3fb950" font-weight="700">3</tspan>  pg_restore/mysql/mongorestore</text>
       <text x="302" y="254"><tspan fill="#3fb950" font-weight="700">4</tspan>  checks against the restored DB</text>
       <text x="302" y="282"><tspan fill="#3fb950" font-weight="700">5</tspan>  docker rm — container is gone</text>
     </g>
